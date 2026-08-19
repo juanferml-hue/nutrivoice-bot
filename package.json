@@ -4,7 +4,7 @@
   "description": "Copiloto de nutricion por WhatsApp con IA",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc && npx prisma generate",
+    "build": "npx prisma generate && tsc --skipLibCheck",
     "start": "node dist/index.js",
     "dev": "ts-node-dev src/index.ts"
   },
