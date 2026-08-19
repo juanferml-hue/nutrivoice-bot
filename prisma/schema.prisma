@@ -1,0 +1,43 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum SubscriptionStatus {
+  trial
+  active
+  canceled
+}
+
+model User {
+  id              String             @id @default(uuid())
+  phoneNumber     String             @unique
+  name            String?
+  targetCalories  Int                @default(2000)
+  targetProteinG  Int                @default(150)
+  targetCarbsG    Int                @default(200)
+  targetFatsG     Int                @default(65)
+  status          SubscriptionStatus @default(trial)
+  trialCount      Int                @default(0)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  meals           Meal[]
+}
+
+model Meal {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  mealType      String   @default("snack")
+  rawInputText  String?
+  totalCalories Int
+  totalProteinG Float
+  totalCarbsG   Float
+  totalFatsG    Float
+  items         Json
+  createdAt     DateTime @default(now())
+}
