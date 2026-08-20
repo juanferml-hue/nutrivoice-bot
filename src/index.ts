@@ -1,4 +1,4 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
+import { Client, LocalAuth } from 'whatsapp-web.js';
 import qrcode from 'qrcode-terminal';
 import { analyzeMealText } from './services/aiService';
 
@@ -10,14 +10,17 @@ const client = new Client({
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--no-zygote'
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--single-process',
+            '--disable-gpu'
         ]
     }
 });
 
 client.on('qr', (qr: string) => {
-    console.log('--- ESCANEA ESTE QR O USA EL LINK ---');
+    console.log('--- COPIA Y ABRE ESTE LINK ---');
     console.log('https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(qr));
     qrcode.generate(qr, { small: true });
 });
@@ -26,12 +29,10 @@ client.on('ready', () => {
     console.log('✅ ¡NutriVoice Bot conectado y escuchando mensajes!');
 });
 
-// ESCUCHADOR GENERAL DE MENSAJES (Captura mensajes entrantes)
 client.on('message_create', async (msg: any) => {
-    // Evita responder a los mensajes que envía el propio bot
     if (msg.fromMe) return;
 
-    console.log(`📩 Mensaje detectado desde ${msg.from}: ${msg.body}`);
+    console.log(`📩 Mensaje recibido desde ${msg.from}: ${msg.body}`);
 
     try {
         const result = await analyzeMealText(msg.body);
@@ -52,7 +53,7 @@ client.on('message_create', async (msg: any) => {
 
     } catch (error: any) {
         console.error('❌ Error procesando el mensaje:', error?.message || error);
-        await msg.reply('Ocurrió un error al analizar la información. Revisa la consola.');
+        await msg.reply('Ocurrió un error al analizar la información.');
     }
 });
 
