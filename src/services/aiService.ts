@@ -1,22 +1,7 @@
-import axios from 'axios';
 import OpenAI from 'openai';
 import FormData from 'form-data';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-export async function downloadWhatsAppMedia(mediaId: string): Promise<Buffer> {
-  const mediaUrlResponse = await axios.get(
-    `https://graph.facebook.com/v19.0/${mediaId}`,
-    { headers: { Authorization: `Bearer ${process.env.WHATSAPP_API_TOKEN}` } }
-  );
-
-  const audioResponse = await axios.get(mediaUrlResponse.data.url, {
-    headers: { Authorization: `Bearer ${process.env.WHATSAPP_API_TOKEN}` },
-    responseType: 'arraybuffer'
-  });
-
-  return Buffer.from(audioResponse.data);
-}
 
 export async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
   const formData = new FormData();
@@ -24,15 +9,18 @@ export async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
   formData.append('model', 'whisper-1');
   formData.append('language', 'es');
 
-  const response = await axios.post('https://api.openai.com/v1/audio/transcriptions', formData, {
-    headers: { ...formData.getHeaders(), Authorization: `Bearer ${process.env.OPENAI_API_KEY}` }
+  const response = await openai.audio.transcriptions.create({
+    file: formData as any,
+    model: 'whisper-1',
+    language: 'es'
   });
 
-  return response.data.text;
+  return response.text;
 }
 
 export async function analyzeMealText(transcription: string) {
   const systemPrompt = `Eres el motor nutricional de NutriVoice. Analiza el texto y devuelve ÚNICAMENTE un JSON válido con las calorías y macronutrientes estimados.
+Si el texto no se refiere a alimentos o comida, establece "is_food": false.
 Esquema JSON:
 {
   "is_food": boolean,
@@ -45,7 +33,7 @@ Esquema JSON:
 }`;
 
   const completion = await openai.chat.completions.create({
-    model: 'gpt-4o',
+    model: 'gpt-4o-mini',
     response_format: { type: 'json_object' },
     messages: [
       { role: 'system', content: systemPrompt },
