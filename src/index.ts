@@ -26,34 +26,33 @@ client.on('ready', () => {
     console.log('✅ ¡NutriVoice Bot conectado y escuchando mensajes!');
 });
 
-// ESCUCHADOR DE MENSAJES INBOUND
-client.on('message', async (msg: any) => {
-    // Filtra para responder solo a chats privados
-    if (msg.from.endsWith('@c.us')) {
-        try {
-            console.log(`📩 Mensaje recibido de ${msg.from}: ${msg.body}`);
-            
-            // Envía el texto a la IA para analizar
-            const result = await analyzeMealText(msg.body);
+// ESCUCHADOR GENERAL DE MENSAJES (Captura mensajes entrantes)
+client.on('message_create', async (msg: any) => {
+    // Evita responder a los mensajes que envía el propio bot
+    if (msg.fromMe) return;
 
-            if (!result.is_food) {
-                await msg.reply('Hola 👋, soy NutriVoice. Por favor envíame lo que comiste para calcular tus calorías.');
-                return;
-            }
+    console.log(`📩 Mensaje detectado desde ${msg.from}: ${msg.body}`);
 
-            // Formatea la respuesta nutricional
-            const responseText = `🥗 *Análisis Nutricional* (${result.meal_type.toUpperCase()})\n\n` +
-                `🔥 *Calorías Totales:* ${result.total_calories} kcal\n` +
-                `🥩 *Proteínas:* ${result.total_protein_g}g\n` +
-                `🍞 *Carbohidratos:* ${result.total_carbs_g}g\n` +
-                `🥑 *Grasas:* ${result.total_fats_g}g`;
+    try {
+        const result = await analyzeMealText(msg.body);
 
-            await msg.reply(responseText);
-
-        } catch (error) {
-            console.error('❌ Error procesando el mensaje:', error);
-            await msg.reply('Lo siento, ocurrió un error al analizar tu mensaje.');
+        if (!result.is_food) {
+            await msg.reply('Hola 👋, soy NutriVoice. Envíame lo que comiste para calcular tus calorías y macronutrientes.');
+            return;
         }
+
+        const responseText = `🥗 *Análisis Nutricional* (${(result.meal_type || 'comida').toUpperCase()})\n\n` +
+            `🔥 *Calorías Totales:* ${result.total_calories || 0} kcal\n` +
+            `🥩 *Proteínas:* ${result.total_protein_g || 0}g\n` +
+            `🍞 *Carbohidratos:* ${result.total_carbs_g || 0}g\n` +
+            `🥑 *Grasas:* ${result.total_fats_g || 0}g`;
+
+        await msg.reply(responseText);
+        console.log('✅ Respuesta enviada con éxito.');
+
+    } catch (error: any) {
+        console.error('❌ Error procesando el mensaje:', error?.message || error);
+        await msg.reply('Ocurrió un error al analizar la información. Revisa la consola.');
     }
 });
 
