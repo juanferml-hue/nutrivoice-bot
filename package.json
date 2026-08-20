@@ -1,7 +1,7 @@
 {
   "name": "nutrivoice-bot",
   "version": "1.0.0",
-  "main": "src/index.ts",
+  "main": "dist/index.js",
   "dependencies": {
     "whatsapp-web.js": "1.26.0",
     "qrcode-terminal": "^0.12.0",
@@ -10,6 +10,7 @@
     "typescript": "^5.0.0"
   },
   "scripts": {
-    "start": "ts-node src/index.ts"
+    "build": "tsc",
+    "start": "tsc && node dist/index.js"
   }
 }
