@@ -10,17 +10,13 @@ const client = new Client({
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--single-process',
             '--disable-gpu'
         ]
     }
 });
 
 client.on('qr', (qr: string) => {
-    console.log('--- COPIA Y ABRE ESTE LINK ---');
+    console.log('--- COPIA Y ABRE ESTE LINK EN TU NAVEGADOR ---');
     console.log('https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(qr));
     qrcode.generate(qr, { small: true });
 });
