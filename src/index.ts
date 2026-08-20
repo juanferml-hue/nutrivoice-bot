@@ -11,7 +11,7 @@ const client = new Client({
         dataPath: '/app/.wwebjs_auth'
     }),
     puppeteer: {
-        protocolTimeout: 120000,
+        protocolTimeout: 0,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
