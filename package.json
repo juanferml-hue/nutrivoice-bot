@@ -1,15 +1,16 @@
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "CommonJS",
-    "moduleResolution": "node",
-    "outDir": "./dist",
-    "rootDir": "./src",
-    "strict": false,
-    "noImplicitAny": false,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+  "name": "nutrivoice-bot",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "dependencies": {
+    "whatsapp-web.js": "1.26.0",
+    "qrcode-terminal": "^0.12.0",
+    "openai": "^4.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.0.0"
   },
-  "include": ["src/**/*"]
+  "scripts": {
+    "build": "tsc",
+    "start": "npx tsc && node dist/index.js"
+  }
 }
