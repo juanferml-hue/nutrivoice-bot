@@ -1,4 +1,4 @@
-import { Client, LocalAuth } = require('whatsapp-web.js');
+const { Client, LocalAuth } = require('whatsapp-web.js');
 import qrcode from 'qrcode-terminal';
 import { analyzeMealText } from './services/aiService';
 
