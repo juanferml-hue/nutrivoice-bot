@@ -5,7 +5,6 @@ import { analyzeMealText } from './services/aiService';
 const client = new Client({
     authStrategy: new LocalAuth({ dataPath: '/app/.wwebjs_auth' }),
     puppeteer: {
-        executablePath: '/usr/bin/google-chrome-stable',
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
