@@ -9,8 +9,8 @@ const client = new Client({
 });
 
 client.on('qr', (qr: string) => {
-    console.log('--- ESCANEA ESTE QR DESDE TU CELULAR ---');
-    qrcode.generate(qr, { small: true });
+    console.log('--- COPIA Y ABRE ESTE LINK EN TU CELULAR ---');
+    console.log('https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(qr));
 });
 
 client.on('ready', () => {
