@@ -1,41 +1,30 @@
-import express from 'express';
-import dotenv from 'dotenv';
-import { downloadWhatsAppMedia, transcribeAudio, analyzeMealText } from './services/aiService';
+const { Client, LocalAuth } = require('whatsapp-web.js');
+const qrcode = require('qrcode-terminal');
+const { OpenAI } = require('openai');
 
-dotenv.config();
-const app = express();
-app.use(express.json());
-
-app.get('/webhook', (req, res) => {
-  const mode = req.query['hub.mode'];
-  const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
-
-  if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
-    return res.status(200).send(challenge);
-  }
-  return res.sendStatus(403);
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const client = new Client({
+    authStrategy: new LocalAuth(),
+    puppeteer: { args: ['--no-sandbox'] }
 });
 
-app.post('/webhook', async (req, res) => {
-  try {
-    const entry = req.body.entry?.[0];
-    const message = entry?.changes?.[0]?.value?.messages?.[0];
+client.on('qr', (qr: string) => {
+    console.log('--- ESCANEA ESTE QR DESDE TU CELULAR ---');
+    qrcode.generate(qr, { small: true });
+});
 
-    if (message && message.type === 'audio') {
-      const audioBuffer = await downloadWhatsAppMedia(message.audio.id);
-      const text = await transcribeAudio(audioBuffer);
-      const nutritionData = await analyzeMealText(text);
+client.on('ready', () => {
+    console.log('¡Bot conectado y listo!');
+});
 
-      console.log('Análisis Nutricional completado:', nutritionData);
+client.on('message', async (msg: any) => {
+    if (msg.from.endsWith('@c.us')) {
+        const chat = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [{ role: "user", content: msg.body }]
+        });
+        msg.reply(chat.choices[0].message.content || 'No pude generar respuesta');
     }
-
-    res.sendStatus(200);
-  } catch (error) {
-    console.error('Error procesando webhook:', error);
-    res.sendStatus(500);
-  }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`NutriVoice activo en puerto ${PORT}`));
+client.initialize();
