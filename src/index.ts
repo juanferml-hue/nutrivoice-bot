@@ -12,9 +12,9 @@ http.createServer((req, res) => {
     console.log(`🌐 Servidor de Healthcheck en puerto ${PORT}`);
 });
 
-// 2. Cliente de WhatsApp con configuración Anti-Bloqueo
+// 2. Cliente de WhatsApp
 const client = new Client({
-    authStrategy: new LocalAuth({ dataPath: '/app/.wwebjs_auth' }),
+    authStrategy: new LocalAuth({ clientId: 'nutrivoice-session-v2' }),
     webVersionCache: {
         type: 'remote',
         remotePath: 'https://raw.githubusercontent.com/wwebjs/web-dapi/refs/heads/master/wweb-html/wweb-2.3000.1014111620-site-GPL-2.0.html',
@@ -26,9 +26,6 @@ const client = new Client({
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
             '--disable-gpu'
         ]
     }
@@ -52,17 +49,9 @@ client.on('ready', () => {
     console.log('✅ ¡NutriVoice Bot CONECTADO y ESCUCHANDO!');
 });
 
-client.on('change_state', (state) => {
-    console.log(`🔄 Estado del cliente cambió a: ${state}`);
-});
-
-client.on('disconnected', (reason) => {
-    console.log(`⚠️ Cliente desconectado. Razón: ${reason}`);
-});
-
 // Manejo de mensajes
 const handleMessage = async (msg: any) => {
-    console.log(`📩 [LOG BRUTO] Mensaje detectado de: ${msg.from} | De mí: ${msg.fromMe} | Texto: ${msg.body}`);
+    console.log(`📩 Mensaje detectado de: ${msg.from} | De mí: ${msg.fromMe} | Texto: ${msg.body}`);
 
     if (msg.fromMe) return;
 
