@@ -7,6 +7,7 @@ import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeys
 import qrcode from 'qrcode-terminal';
 import http from 'http';
 import { analyzeMealText } from './services/aiService';
+import { prisma, getOrCreateUser, calculateMacros } from './services/userService';
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
@@ -47,32 +48,168 @@ async function connectToWhatsApp() {
         if (!msg.message || msg.key.fromMe) return;
 
         const remoteJid = msg.key.remoteJid;
-        const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
+        const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').trim();
 
         if (!text || !remoteJid) return;
 
-        console.log(`📩 Mensaje recibido de ${remoteJid}: ${text}`);
-
         try {
-            const result = await analyzeMealText(text);
+            const user = await getOrCreateUser(remoteJid);
 
-            if (!result.is_food) {
-                await sock.sendMessage(remoteJid, { text: 'Hola 👋, soy NutriVoice. Envíame lo que comiste para calcular tus calorías.' });
+            // FLUJO DE ONBOARDING
+            if (user.onboardingStep !== 'COMPLETED') {
+                await handleOnboarding(sock, remoteJid, user, text);
                 return;
             }
 
+            // COMANDOS ESPECIALES
+            if (text.toLowerCase() === 'resumen' || text.toLowerCase() === 'hoy') {
+                await sendDailySummary(sock, remoteJid, user.id);
+                return;
+            }
+
+            // REGISTRO DE COMIDA HABITUAL
+            const result = await analyzeMealText(text);
+
+            if (!result.is_food) {
+                await sock.sendMessage(remoteJid, { text: 'Hola 👋, envíame lo que comiste para registrarlo, o escribe *RESUMEN* para ver tus calorías de hoy.' });
+                return;
+            }
+
+            // Guardar comida en Base de Datos
+            await prisma.meal.create({
+                data: {
+                    userId: user.id,
+                    mealType: result.meal_type || 'comida',
+                    description: text,
+                    calories: result.total_calories || 0,
+                    proteinG: result.total_protein_g || 0,
+                    carbsG: result.total_carbs_g || 0,
+                    fatsG: result.total_fats_g || 0
+                }
+            });
+
+            // Obtener acumulado de hoy
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const todayMeals = await prisma.meal.aggregate({
+                where: {
+                    userId: user.id,
+                    createdAt: { gte: today }
+                },
+                _sum: { calories: true, proteinG: true, carbsG: true, fatsG: true }
+            });
+
+            const consumedCals = todayMeals._sum.calories || 0;
+            const targetCals = user.dailyCalories || 2000;
+
             const responseText = `🥗 *Análisis Nutricional* (${(result.meal_type || 'comida').toUpperCase()})\n\n` +
-                `🔥 *Calorías Totales:* ${result.total_calories || 0} kcal\n` +
-                `🥩 *Proteínas:* ${result.total_protein_g || 0}g\n` +
-                `🍞 *Carbohidratos:* ${result.total_carbs_g || 0}g\n` +
-                `🥑 *Grasas:* ${result.total_fats_g || 0}g`;
+                `🔥 *Calorías:* ${result.total_calories || 0} kcal\n` +
+                `🥩 *Proteínas:* ${result.total_protein_g || 0}g | 🍞 *Carbs:* ${result.total_carbs_g || 0}g | 🥑 *Grasas:* ${result.total_fats_g || 0}g\n\n` +
+                `📊 *Progreso Diario:* ${consumedCals} / ${targetCals} kcal (${Math.round((consumedCals / targetCals) * 100)}%)`;
 
             await sock.sendMessage(remoteJid, { text: responseText });
-            console.log('✅ Respuesta enviada con éxito.');
+
         } catch (error: any) {
             console.error('❌ Error procesando el mensaje:', error?.message || error);
         }
     });
+}
+
+// Función auxiliar para el Onboarding
+async function handleOnboarding(sock: any, remoteJid: string, user: any, text: string) {
+    if (user.onboardingStep === 'ASK_AGE') {
+        const age = parseInt(text);
+        if (isNaN(age) || age < 10 || age > 100) {
+            await sock.sendMessage(remoteJid, { text: '👋 ¡Bienvenido a NutriVoice! Para personalizar tu plan, ¿cuántos años tienes?' });
+            return;
+        }
+        await prisma.user.update({ where: { id: user.id }, data: { age, onboardingStep: 'ASK_WEIGHT' } });
+        await sock.sendMessage(remoteJid, { text: 'Perfecto. ¿Cuál es tu peso actual en kilogramos? (Ej: 70.5)' });
+        return;
+    }
+
+    if (user.onboardingStep === 'ASK_WEIGHT') {
+        const weight = parseFloat(text.replace(',', '.'));
+        if (isNaN(weight) || weight < 30 || weight > 250) {
+            await sock.sendMessage(remoteJid, { text: 'Por favor, ingresa un peso válido en kg. (Ej: 75)' });
+            return;
+        }
+        await prisma.user.update({ where: { id: user.id }, data: { weightKg: weight, onboardingStep: 'ASK_HEIGHT' } });
+        await sock.sendMessage(remoteJid, { text: 'Genial. ¿Cuánto mides en centímetros? (Ej: 175)' });
+        return;
+    }
+
+    if (user.onboardingStep === 'ASK_HEIGHT') {
+        const height = parseFloat(text);
+        if (isNaN(height) || height < 100 || height > 230) {
+            await sock.sendMessage(remoteJid, { text: 'Por favor, ingresa tu estatura en centímetros. (Ej: 170)' });
+            return;
+        }
+        await prisma.user.update({ where: { id: user.id }, data: { heightCm: height, onboardingStep: 'ASK_GOAL' } });
+        await sock.sendMessage(remoteJid, { 
+            text: '¿Cuál es tu objetivo principal?\n\n1️⃣ Perder peso\n2️⃣ Mantener peso\n3️⃣ Ganar masa muscular\n\n_Responde con 1, 2 o 3_' 
+        });
+        return;
+    }
+
+    if (user.onboardingStep === 'ASK_GOAL') {
+        let goal = 'maintain';
+        if (text === '1') goal = 'lose';
+        if (text === '3') goal = 'gain';
+
+        const macros = calculateMacros(user.age, user.weightKg, user.heightCm, goal);
+
+        await prisma.user.update({
+            where: { id: user.id },
+            data: {
+                goal,
+                dailyCalories: macros.targetCalories,
+                dailyProteinG: macros.proteinG,
+                dailyCarbsG: macros.carbsG,
+                dailyFatsG: macros.fatsG,
+                onboardingStep: 'COMPLETED'
+            }
+        });
+
+        await sock.sendMessage(remoteJid, {
+            text: `🎯 *¡Perfil Configurado con Éxito!*\n\n` +
+                `Tu meta diaria estimada es:\n` +
+                `🔥 *Calorías:* ${macros.targetCalories} kcal\n` +
+                `🥩 *Proteínas:* ${macros.proteinG}g\n` +
+                `🍞 *Carbohidratos:* ${macros.carbsG}g\n` +
+                `🥑 *Grasas:* ${macros.fatsG}g\n\n` +
+                `¡Ya puedes empezar a enviarme lo que comes!`
+        });
+    }
+}
+
+// Función auxiliar para el Resumen Diario
+async function sendDailySummary(sock: any, remoteJid: string, userId: string) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const meals = await prisma.meal.findMany({
+        where: { userId, createdAt: { gte: today } },
+        orderBy: { createdAt: 'asc' }
+    });
+
+    if (meals.length === 0) {
+        await sock.sendMessage(remoteJid, { text: 'Aún no has registrado comidas el día de hoy.' });
+        return;
+    }
+
+    let totalCals = 0;
+    let summaryText = `📅 *Resumen Nutricional de Hoy*\n\n`;
+
+    meals.forEach((m) => {
+        totalCals += m.calories;
+        summaryText += `• *${m.mealType.toUpperCase()}:* ${m.calories} kcal (${m.description})\n`;
+    });
+
+    summaryText += `\n🔥 *Total Acumulado:* ${totalCals} kcal`;
+
+    await sock.sendMessage(remoteJid, { text: summaryText });
 }
 
 connectToWhatsApp();
