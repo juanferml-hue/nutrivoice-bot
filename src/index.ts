@@ -1,3 +1,8 @@
+import crypto from 'crypto';
+if (!globalThis.crypto) {
+    (globalThis as any).crypto = crypto;
+}
+
 import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
 import qrcode from 'qrcode-terminal';
 import http from 'http';
