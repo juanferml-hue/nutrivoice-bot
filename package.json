@@ -3,10 +3,9 @@
   "version": "1.0.0",
   "main": "dist/index.js",
   "dependencies": {
-    "whatsapp-web.js": "github:wwebjs/whatsapp-web.js#v1.26.0",
+    "@whiskeysockets/baileys": "^6.6.0",
     "qrcode-terminal": "^0.12.0",
     "openai": "^4.0.0",
-    "ts-node": "^10.9.2",
     "typescript": "^5.0.0"
   },
   "scripts": {
