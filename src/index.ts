@@ -3,10 +3,10 @@ if (!globalThis.crypto) {
     (globalThis as any).crypto = crypto;
 }
 
-import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
+import makeWASocket, { useMultiFileAuthState, DisconnectReason, downloadMediaMessage } from '@whiskeysockets/baileys';
 import qrcode from 'qrcode-terminal';
 import http from 'http';
-import { analyzeMealText, generateUserResponse } from './services/aiService';
+import { analyzeMealText, generateUserResponse, analyzeMealImage, transcribeAudio } from './services/aiService';
 import { prisma, getOrCreateUser, calculateMacros } from './services/userService';
 
 const PORT = process.env.PORT || 3000;
@@ -58,9 +58,15 @@ async function connectToWhatsApp() {
         if (!msg.message || msg.key.fromMe) return;
 
         const remoteJid = msg.key.remoteJid;
-        const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').trim();
+        if (!remoteJid) return;
 
-        if (!text || !remoteJid) return;
+        // Detección de tipos de mensaje
+        const isImage = !!msg.message.imageMessage;
+        const isAudio = !!msg.message.audioMessage;
+        let text = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').trim();
+
+        // Ignorar si no es ni texto, ni imagen, ni audio
+        if (!text && !isImage && !isAudio) return;
 
         try {
             const user = await getOrCreateUser(remoteJid);
@@ -71,56 +77,82 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            const lowerText = text.toLowerCase();
+            let result: any;
+            let mealDescription = text;
 
-            // COMANDOS DE CONSULTA Y AJUSTE DE PERFIL
-            if (lowerText === 'perfil' || lowerText === 'config' || lowerText === 'ajustes') {
-                const profileText = `⚙️ *Ajustes de Tu Perfil NutriVoice*\n\n` +
-                    `👤 *Edad:* ${user.age || 'No configurado'} años\n` +
-                    `⚖️ *Peso:* ${user.weightKg || 'No configurado'} kg\n` +
-                    `📏 *Estatura:* ${user.heightCm || 'No configurado'} cm\n` +
-                    `🎯 *Objetivo:* ${user.goal === 'lose' ? 'Perder peso' : user.goal === 'gain' ? 'Ganar masa' : 'Mantener peso'}\n\n` +
-                    `🔥 *Meta Diaria:* ${user.dailyCalories || 2000} kcal\n\n` +
-                    `📌 *¿Deseas actualizar algo? Responde con:*\n` +
-                    `1️⃣ *PESO* -> Actualizar tu peso actual\n` +
-                    `2️⃣ *OBJETIVO* -> Cambiar tu meta nutricional\n` +
-                    `3️⃣ *REINICIAR* -> Volver a hacer todo el onboarding`;
+            // 1. PROCESAR IMAGEN (VISIÓN)
+            if (isImage) {
+                await sock.sendMessage(remoteJid, { text: '📸 Analizando la imagen de tu plato...' });
+                
+                const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                const base64Image = buffer.toString('base64');
+                const mimeType = msg.message.imageMessage?.mimetype || 'image/jpeg';
 
-                await sock.sendMessage(remoteJid, { text: profileText });
-                return;
+                result = await analyzeMealImage(base64Image, mimeType);
+                mealDescription = msg.message.imageMessage?.caption || 'Foto de comida';
+            } 
+            // 2. PROCESAR AUDIO (WHISPER)
+            else if (isAudio) {
+                await sock.sendMessage(remoteJid, { text: '🎙️ Escuchando tu nota de voz...' });
+
+                const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                mealDescription = await transcribeAudio(buffer);
+                result = await analyzeMealText(mealDescription);
+            } 
+            // 3. PROCESAR TEXTO
+            else {
+                const lowerText = text.toLowerCase();
+
+                // COMANDOS DE CONSULTA Y AJUSTE DE PERFIL
+                if (lowerText === 'perfil' || lowerText === 'config' || lowerText === 'ajustes') {
+                    const profileText = `⚙️ *Ajustes de Tu Perfil NutriVoice*\n\n` +
+                        `👤 *Edad:* ${user.age || 'No configurado'} años\n` +
+                        `⚖️ *Peso:* ${user.weightKg || 'No configurado'} kg\n` +
+                        `📏 *Estatura:* ${user.heightCm || 'No configurado'} cm\n` +
+                        `🎯 *Objetivo:* ${user.goal === 'lose' ? 'Perder peso' : user.goal === 'gain' ? 'Ganar masa' : 'Mantener peso'}\n\n` +
+                        `🔥 *Meta Diaria:* ${user.dailyCalories || 2000} kcal\n\n` +
+                        `📌 *¿Deseas actualizar algo? Responde con:*\n` +
+                        `1️⃣ *PESO* -> Actualizar tu peso actual\n` +
+                        `2️⃣ *OBJETIVO* -> Cambiar tu meta nutricional\n` +
+                        `3️⃣ *REINICIAR* -> Volver a hacer todo el onboarding`;
+
+                    await sock.sendMessage(remoteJid, { text: profileText });
+                    return;
+                }
+
+                if (lowerText === 'peso' || lowerText === '1') {
+                    await prisma.user.update({ where: { id: user.id }, data: { onboardingStep: 'EDIT_WEIGHT' } });
+                    await sock.sendMessage(remoteJid, { text: '⚖️ ¿Cuál es tu nuevo peso en kg? (Ej: 72.5)' });
+                    return;
+                }
+
+                if (lowerText === 'objetivo' || lowerText === '2') {
+                    await prisma.user.update({ where: { id: user.id }, data: { onboardingStep: 'EDIT_GOAL' } });
+                    await sock.sendMessage(remoteJid, { 
+                        text: '🎯 Selecciona tu nuevo objetivo:\n\n1️⃣ Perder peso\n2️⃣ Mantener peso\n3️⃣ Ganar masa muscular\n\n_Responde con 1, 2 o 3_' 
+                    });
+                    return;
+                }
+
+                if (lowerText === 'reiniciar' || lowerText === '3') {
+                    await prisma.user.update({ where: { id: user.id }, data: { onboardingStep: 'ASK_AGE' } });
+                    await sock.sendMessage(remoteJid, { text: '🔄 Reiniciando perfil... Para comenzar, ¿cuántos años tienes?' });
+                    return;
+                }
+
+                // COMANDOS DE RESUMEN
+                if (lowerText === 'resumen' || lowerText === 'hoy') {
+                    await sendDailySummary(sock, remoteJid, user.id);
+                    return;
+                }
+
+                // REGISTRO DE COMIDA POR TEXTO
+                result = await analyzeMealText(text);
             }
 
-            if (lowerText === 'peso' || lowerText === '1') {
-                await prisma.user.update({ where: { id: user.id }, data: { onboardingStep: 'EDIT_WEIGHT' } });
-                await sock.sendMessage(remoteJid, { text: '⚖️ ¿Cuál es tu nuevo peso en kg? (Ej: 72.5)' });
-                return;
-            }
-
-            if (lowerText === 'objetivo' || lowerText === '2') {
-                await prisma.user.update({ where: { id: user.id }, data: { onboardingStep: 'EDIT_GOAL' } });
-                await sock.sendMessage(remoteJid, { 
-                    text: '🎯 Selecciona tu nuevo objetivo:\n\n1️⃣ Perder peso\n2️⃣ Mantener peso\n3️⃣ Ganar masa muscular\n\n_Responde con 1, 2 o 3_' 
-                });
-                return;
-            }
-
-            if (lowerText === 'reiniciar' || lowerText === '3') {
-                await prisma.user.update({ where: { id: user.id }, data: { onboardingStep: 'ASK_AGE' } });
-                await sock.sendMessage(remoteJid, { text: '🔄 Reiniciando perfil... Para comenzar, ¿cuántos años tienes?' });
-                return;
-            }
-
-            // COMANDOS DE RESUMEN
-            if (lowerText === 'resumen' || lowerText === 'hoy') {
-                await sendDailySummary(sock, remoteJid, user.id);
-                return;
-            }
-
-            // REGISTRO DE COMIDA HABITUAL
-            const result = await analyzeMealText(text);
-
+            // SI NO SE DETECTARON ALIMENTOS
             if (!result.is_food) {
-                await sock.sendMessage(remoteJid, { text: 'Hola 👋, envíame lo que comiste para registrarlo, o escribe *RESUMEN* para ver tus calorías de hoy.' });
+                await sock.sendMessage(remoteJid, { text: 'Hola 👋, no logré identificar alimentos. Envíame un mensaje de texto, foto o audio describiendo tu comida.' });
                 return;
             }
 
@@ -129,7 +161,7 @@ async function connectToWhatsApp() {
                 data: {
                     userId: user.id,
                     mealType: result.meal_type || 'comida',
-                    description: text,
+                    description: mealDescription,
                     calories: result.total_calories || 0,
                     proteinG: result.total_protein_g || 0,
                     carbsG: result.total_carbs_g || 0,
@@ -164,7 +196,7 @@ async function connectToWhatsApp() {
 
             // Generar respuesta conversacional inteligente
             const responseText = await generateUserResponse(
-                text,
+                mealDescription,
                 result,
                 remainingMacros
             );
@@ -240,7 +272,7 @@ async function handleOnboarding(sock: any, remoteJid: string, user: any, text: s
                 `🥩 *Proteínas:* ${macros.proteinG}g\n` +
                 `🍞 *Carbohidratos:* ${macros.carbsG}g\n` +
                 `🥑 *Grasas:* ${macros.fatsG}g\n\n` +
-                `¡Ya puedes empezar a enviarme lo que comes!`
+                `¡Ya puedes empezar a enviarme fotos, audios o textos de lo que comes!`
         });
         return;
     }
