@@ -1,79 +1,73 @@
-import { Client, LocalAuth } from 'whatsapp-web.js';
+import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
 import qrcode from 'qrcode-terminal';
 import http from 'http';
 import { analyzeMealText } from './services/aiService';
 
-// 1. Servidor de Healthcheck para Railway
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('NutriVoice Bot está activo 🚀\n');
-}).listen(PORT, () => {
-    console.log(`🌐 Servidor de Healthcheck en puerto ${PORT}`);
-});
+    res.end('NutriVoice Bot activo 🚀\n');
+}).listen(PORT, () => console.log(`🌐 Healthcheck en puerto ${PORT}`));
 
-// 2. Cliente de WhatsApp
-const client = new Client({
-    authStrategy: new LocalAuth({ clientId: 'nutrivoice-v6' }),
-    puppeteer: {
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
-        headless: true,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--disable-gpu'
-        ]
-    }
-});
+async function connectToWhatsApp() {
+    const { state, saveCreds } = await useMultiFileAuthState('/app/.wwebjs_auth');
 
-client.on('qr', (qr: string) => {
-    console.log('--- ESCANEA ESTE NUEVO CÓDIGO QR ---');
-    console.log('https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(qr));
-    qrcode.generate(qr, { small: true });
-});
+    const sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: false
+    });
 
-client.on('authenticated', () => {
-    console.log('🔑 Autenticación exitosa en WhatsApp Web.');
-});
+    sock.ev.on('creds.update', saveCreds);
 
-client.on('ready', () => {
-    console.log('✅ ¡NutriVoice Bot CONECTADO y ESCUCHANDO!');
-});
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect, qr } = update;
 
-// Escuchador de mensajes
-const handleMessage = async (msg: any) => {
-    console.log(`📩 Mensaje detectado de ${msg.from}: ${msg.body}`);
-
-    if (msg.fromMe) return;
-
-    try {
-        const result = await analyzeMealText(msg.body);
-
-        if (!result.is_food) {
-            await msg.reply('Hola 👋, soy NutriVoice. Envíame lo que comiste para calcular tus calorías.');
-            return;
+        if (qr) {
+            console.log('--- ESCANEA ESTE CÓDIGO QR ---');
+            console.log('https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(qr));
+            qrcode.generate(qr, { small: true });
         }
 
-        const responseText = `🥗 *Análisis Nutricional* (${(result.meal_type || 'comida').toUpperCase()})\n\n` +
-            `🔥 *Calorías Totales:* ${result.total_calories || 0} kcal\n` +
-            `🥩 *Proteínas:* ${result.total_protein_g || 0}g\n` +
-            `🍞 *Carbohidratos:* ${result.total_carbs_g || 0}g\n` +
-            `🥑 *Grasas:* ${result.total_fats_g || 0}g`;
+        if (connection === 'close') {
+            const shouldReconnect = (lastDisconnect?.error as any)?.output?.statusCode !== DisconnectReason.loggedOut;
+            console.log('⚠️ Conexión cerrada. Reconectando:', shouldReconnect);
+            if (shouldReconnect) connectToWhatsApp();
+        } else if (connection === 'open') {
+            console.log('✅ ¡NutriVoice Bot CONECTADO Y ESCUCHANDO!');
+        }
+    });
 
-        await msg.reply(responseText);
-        console.log('✅ Respuesta enviada con éxito.');
+    sock.ev.on('messages.upsert', async (m) => {
+        const msg = m.messages[0];
+        if (!msg.message || msg.key.fromMe) return;
 
-    } catch (error: any) {
-        console.error('❌ Error en el procesamiento:', error?.message || error);
-    }
-};
+        const remoteJid = msg.key.remoteJid;
+        const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
 
-client.on('message', handleMessage);
+        if (!text || !remoteJid) return;
 
-client.initialize().catch((error: any) => {
-    console.error('❌ Error inicializando el cliente:', error);
-});
+        console.log(`📩 Mensaje recibido de ${remoteJid}: ${text}`);
+
+        try {
+            const result = await analyzeMealText(text);
+
+            if (!result.is_food) {
+                await sock.sendMessage(remoteJid, { text: 'Hola 👋, soy NutriVoice. Envíame lo que comiste para calcular tus calorías.' });
+                return;
+            }
+
+            const responseText = `🥗 *Análisis Nutricional* (${(result.meal_type || 'comida').toUpperCase()})\n\n` +
+                `🔥 *Calorías Totales:* ${result.total_calories || 0} kcal\n` +
+                `🥩 *Proteínas:* ${result.total_protein_g || 0}g\n` +
+                `🍞 *Carbohidratos:* ${result.total_carbs_g || 0}g\n` +
+                `🥑 *Grasas:* ${result.total_fats_g || 0}g`;
+
+            await sock.sendMessage(remoteJid, { text: responseText });
+            console.log('✅ Respuesta enviada con éxito.');
+        } catch (error: any) {
+            console.error('❌ Error procesando el mensaje:', error?.message || error);
+        }
+    });
+}
+
+connectToWhatsApp();
