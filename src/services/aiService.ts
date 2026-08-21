@@ -1,17 +1,13 @@
-import OpenAI from 'openai';
-import FormData from 'form-data';
+import OpenAI, { toFile } from 'openai';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // 1. Transcripción de Notas de Voz
 export async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
-  const formData = new FormData();
-  formData.append('file', audioBuffer, { filename: 'audio.ogg', contentType: 'audio/ogg' });
-  formData.append('model', 'whisper-1');
-  formData.append('language', 'es');
+  const file = await toFile(audioBuffer, 'audio.ogg', { type: 'audio/ogg' });
 
   const response = await openai.audio.transcriptions.create({
-    file: formData as any,
+    file: file,
     model: 'whisper-1',
     language: 'es'
   });
