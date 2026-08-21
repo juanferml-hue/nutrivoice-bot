@@ -365,7 +365,6 @@ async function handleOnboarding(sock: any, remoteJid: string, user: any, text: s
 
 // PROGRAMADOR AUTOMÁTICO DE RECORDATORIOS (CRON JOB)
 function setupReminderCron(sock: any) {
-    // Revisa cada minuto si hay usuarios a los que les corresponda un recordatorio
     cron.schedule('* * * * *', async () => {
         const now = new Date();
         const hours = String(now.getHours()).padStart(2, '0');
@@ -382,7 +381,6 @@ function setupReminderCron(sock: any) {
             });
 
             for (const user of usersToNotify) {
-                // Verificar si registró alguna comida hoy
                 const today = new Date();
                 today.setHours(0, 0, 0, 0);
 
@@ -390,9 +388,8 @@ function setupReminderCron(sock: any) {
                     where: { userId: user.id, createdAt: { gte: today } }
                 });
 
-                // Si no ha registrado ninguna comida hoy, le envía el mensaje
                 if (mealsCount === 0) {
-                    await sock.sendMessage(user.phoneNumber, {
+                    await sock.sendMessage(user.phone, {
                         text: `👋 ¡Hola! Recuerda registrar tus alimentos de hoy en NutriVoice para no perder la secuencia de tus metas. 🥗📸`
                     });
                 }
