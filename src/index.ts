@@ -3,7 +3,7 @@ import qrcode from 'qrcode-terminal';
 import http from 'http';
 import { analyzeMealText } from './services/aiService';
 
-// 1. Servidor HTTP de Healthcheck para Railway
+// 1. Servidor de Healthcheck para Railway
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -14,11 +14,7 @@ http.createServer((req, res) => {
 
 // 2. Cliente de WhatsApp
 const client = new Client({
-    authStrategy: new LocalAuth({ clientId: 'nutrivoice-session-v2' }),
-    webVersionCache: {
-        type: 'remote',
-        remotePath: 'https://raw.githubusercontent.com/wwebjs/web-dapi/refs/heads/master/wweb-html/wweb-2.3000.1014111620-site-GPL-2.0.html',
-    },
+    authStrategy: new LocalAuth({ clientId: 'nutrivoice-session-v3' }),
     puppeteer: {
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
         headless: true,
@@ -26,13 +22,17 @@ const client = new Client({
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
-            '--disable-gpu'
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--disable-gpu',
+            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
         ]
     }
 });
 
 client.on('qr', (qr: string) => {
-    console.log('--- NUEVO CÓDIGO QR GENERADO ---');
+    console.log('--- ESCANEA ESTE NUEVO CÓDIGO QR ---');
     console.log('https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(qr));
     qrcode.generate(qr, { small: true });
 });
@@ -49,9 +49,9 @@ client.on('ready', () => {
     console.log('✅ ¡NutriVoice Bot CONECTADO y ESCUCHANDO!');
 });
 
-// Manejo de mensajes
+// Manejador de mensajes
 const handleMessage = async (msg: any) => {
-    console.log(`📩 Mensaje detectado de: ${msg.from} | De mí: ${msg.fromMe} | Texto: ${msg.body}`);
+    console.log(`📩 Mensaje recibido de ${msg.from}: ${msg.body}`);
 
     if (msg.fromMe) return;
 
@@ -70,16 +70,15 @@ const handleMessage = async (msg: any) => {
             `🥑 *Grasas:* ${result.total_fats_g || 0}g`;
 
         await msg.reply(responseText);
-        console.log('✅ Respuesta enviada exitosamente.');
+        console.log('✅ Respuesta enviada con éxito.');
 
     } catch (error: any) {
-        console.error('❌ Error procesando respuesta:', error?.message || error);
+        console.error('❌ Error procesando el mensaje:', error?.message || error);
     }
 };
 
 client.on('message', handleMessage);
-client.on('message_create', handleMessage);
 
 client.initialize().catch((error: any) => {
-    console.error('❌ Error fatal en initialize:', error);
+    console.error('❌ ERROR EN INITIALIZE:', error);
 });
