@@ -9,9 +9,9 @@ RUN npm install
 
 COPY . .
 
-# Generar cliente de Prisma y compilar TypeScript
+# Generar cliente de Prisma y compilar
 RUN npx prisma generate
 RUN npm run build
 
-# Aplicar migraciones a la DB antes de iniciar
-CMD ["sh", "-c", "npx prisma db push && npm start"]
+# Iniciar la aplicación directamente
+CMD ["npm", "start"]
