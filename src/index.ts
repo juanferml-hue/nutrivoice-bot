@@ -9,12 +9,12 @@ http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('NutriVoice Bot está activo 🚀\n');
 }).listen(PORT, () => {
-    console.log(`🌐 Servidor de Healthcheck en puerto ${PORT}`);
+    console.log(`🌐 Servidor de Healthcheck escuchando en puerto ${PORT}`);
 });
 
-// 2. Cliente de WhatsApp
+// 2. Cliente de WhatsApp con banderas de baja memoria y bypass de Puppeteer
 const client = new Client({
-    authStrategy: new LocalAuth({ clientId: 'nutrivoice-session-v3' }),
+    authStrategy: new LocalAuth({ clientId: 'nutrivoice-v4' }),
     puppeteer: {
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
         headless: true,
@@ -25,33 +25,33 @@ const client = new Client({
             '--disable-accelerated-2d-canvas',
             '--no-first-run',
             '--no-zygote',
-            '--disable-gpu',
-            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+            '--single-process', // Fuerza a Chromium a correr en un solo proceso
+            '--disable-gpu'
         ]
     }
 });
 
 client.on('qr', (qr: string) => {
-    console.log('--- ESCANEA ESTE NUEVO CÓDIGO QR ---');
+    console.log('--- ESCANEA ESTE CÓDIGO QR ---');
     console.log('https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(qr));
     qrcode.generate(qr, { small: true });
 });
 
 client.on('authenticated', () => {
-    console.log('🔑 Autenticación exitosa en WhatsApp Web.');
-});
-
-client.on('loading_screen', (percent, message) => {
-    console.log(`⏳ Cargando WhatsApp Web: ${percent}% - ${message}`);
+    console.log('🔑 Autenticación exitosa en WhatsApp Web. Esperando inicialización del cliente...');
 });
 
 client.on('ready', () => {
     console.log('✅ ¡NutriVoice Bot CONECTADO y ESCUCHANDO!');
 });
 
-// Manejador de mensajes
+client.on('auth_failure', (msg) => {
+    console.error('❌ Error de autenticación:', msg);
+});
+
+// Escuchador de mensajes
 const handleMessage = async (msg: any) => {
-    console.log(`📩 Mensaje recibido de ${msg.from}: ${msg.body}`);
+    console.log(`📩 Mensaje detectado | De: ${msg.from} | Texto: ${msg.body}`);
 
     if (msg.fromMe) return;
 
@@ -70,15 +70,16 @@ const handleMessage = async (msg: any) => {
             `🥑 *Grasas:* ${result.total_fats_g || 0}g`;
 
         await msg.reply(responseText);
-        console.log('✅ Respuesta enviada con éxito.');
+        console.log('✅ Respuesta enviada exitosamente.');
 
     } catch (error: any) {
-        console.error('❌ Error procesando el mensaje:', error?.message || error);
+        console.error('❌ Error en el procesamiento:', error?.message || error);
     }
 };
 
 client.on('message', handleMessage);
+client.on('message_create', handleMessage);
 
 client.initialize().catch((error: any) => {
-    console.error('❌ ERROR EN INITIALIZE:', error);
+    console.error('❌ Error inicializando el cliente:', error);
 });
