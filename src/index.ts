@@ -1,11 +1,3 @@
-async function main() {
-    try {
-        console.log('🔄 Sincronizando esquema de base de datos...');
-        await prisma.$executeRawUnsafe(`SELECT 1`); // Verifica conexión
-    } catch (e) {
-        console.log('Esperando conexión con DB...');
-    }
-}
 import crypto from 'crypto';
 if (!globalThis.crypto) {
     (globalThis as any).crypto = crypto;
@@ -22,6 +14,16 @@ http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('NutriVoice Bot activo 🚀\n');
 }).listen(PORT, () => console.log(`🌐 Healthcheck en puerto ${PORT}`));
+
+async function main() {
+    try {
+        console.log('🔄 Sincronizando esquema de base de datos...');
+        await prisma.$executeRawUnsafe(`SELECT 1`); // Verifica conexión
+    } catch (e) {
+        console.log('Esperando conexión con DB...');
+    }
+}
+main();
 
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('/app/.wwebjs_auth');
@@ -63,14 +65,53 @@ async function connectToWhatsApp() {
         try {
             const user = await getOrCreateUser(remoteJid);
 
-            // FLUJO DE ONBOARDING
+            // FLUJO DE ONBOARDING / EDICIÓN DE PERFIL
             if (user.onboardingStep !== 'COMPLETED') {
                 await handleOnboarding(sock, remoteJid, user, text);
                 return;
             }
 
-            // COMANDOS ESPECIALES
-            if (text.toLowerCase() === 'resumen' || text.toLowerCase() === 'hoy') {
+            const lowerText = text.toLowerCase();
+
+            // COMANDOS DE CONSULTA Y AJUSTE DE PERFIL
+            if (lowerText === 'perfil' || lowerText === 'config' || lowerText === 'ajustes') {
+                const profileText = `⚙️ *Ajustes de Tu Perfil NutriVoice*\n\n` +
+                    `👤 *Edad:* ${user.age || 'No configurado'} años\n` +
+                    `⚖️ *Peso:* ${user.weightKg || 'No configurado'} kg\n` +
+                    `📏 *Estatura:* ${user.heightCm || 'No configurado'} cm\n` +
+                    `🎯 *Objetivo:* ${user.goal === 'lose' ? 'Perder peso' : user.goal === 'gain' ? 'Ganar masa' : 'Mantener peso'}\n\n` +
+                    `🔥 *Meta Diaria:* ${user.dailyCalories || 2000} kcal\n\n` +
+                    `📌 *¿Deseas actualizar algo? Responde con:*\n` +
+                    `1️⃣ *PESO* -> Actualizar tu peso actual\n` +
+                    `2️⃣ *OBJETIVO* -> Cambiar tu meta nutricional\n` +
+                    `3️⃣ *REINICIAR* -> Volver a hacer todo el onboarding`;
+
+                await sock.sendMessage(remoteJid, { text: profileText });
+                return;
+            }
+
+            if (lowerText === 'peso' || lowerText === '1') {
+                await prisma.user.update({ where: { id: user.id }, data: { onboardingStep: 'EDIT_WEIGHT' } });
+                await sock.sendMessage(remoteJid, { text: '⚖️ ¿Cuál es tu nuevo peso en kg? (Ej: 72.5)' });
+                return;
+            }
+
+            if (lowerText === 'objetivo' || lowerText === '2') {
+                await prisma.user.update({ where: { id: user.id }, data: { onboardingStep: 'EDIT_GOAL' } });
+                await sock.sendMessage(remoteJid, { 
+                    text: '🎯 Selecciona tu nuevo objetivo:\n\n1️⃣ Perder peso\n2️⃣ Mantener peso\n3️⃣ Ganar masa muscular\n\n_Responde con 1, 2 o 3_' 
+                });
+                return;
+            }
+
+            if (lowerText === 'reiniciar' || lowerText === '3') {
+                await prisma.user.update({ where: { id: user.id }, data: { onboardingStep: 'ASK_AGE' } });
+                await sock.sendMessage(remoteJid, { text: '🔄 Reiniciando perfil... Para comenzar, ¿cuántos años tienes?' });
+                return;
+            }
+
+            // COMANDOS DE RESUMEN
+            if (lowerText === 'resumen' || lowerText === 'hoy') {
                 await sendDailySummary(sock, remoteJid, user.id);
                 return;
             }
@@ -121,7 +162,7 @@ async function connectToWhatsApp() {
                 fats: (user.dailyFatsG || 60) - consumedFats
             };
 
-            // Generar respuesta conversacional inteligente con la personalidad deseada
+            // Generar respuesta conversacional inteligente
             const responseText = await generateUserResponse(
                 text,
                 result,
@@ -136,7 +177,7 @@ async function connectToWhatsApp() {
     });
 }
 
-// Función auxiliar para el Onboarding
+// Función auxiliar para el Onboarding y Edición
 async function handleOnboarding(sock: any, remoteJid: string, user: any, text: string) {
     if (user.onboardingStep === 'ASK_AGE') {
         const age = parseInt(text);
@@ -201,6 +242,67 @@ async function handleOnboarding(sock: any, remoteJid: string, user: any, text: s
                 `🥑 *Grasas:* ${macros.fatsG}g\n\n` +
                 `¡Ya puedes empezar a enviarme lo que comes!`
         });
+        return;
+    }
+
+    // ESTADO: EDITAR PESO
+    if (user.onboardingStep === 'EDIT_WEIGHT') {
+        const weight = parseFloat(text.replace(',', '.'));
+        if (isNaN(weight) || weight < 30 || weight > 250) {
+            await sock.sendMessage(remoteJid, { text: 'Por favor, ingresa un peso válido en kg. (Ej: 72.5)' });
+            return;
+        }
+
+        const macros = calculateMacros(user.age, weight, user.heightCm, user.goal);
+
+        await prisma.user.update({
+            where: { id: user.id },
+            data: {
+                weightKg: weight,
+                dailyCalories: macros.targetCalories,
+                dailyProteinG: macros.proteinG,
+                dailyCarbsG: macros.carbsG,
+                dailyFatsG: macros.fatsG,
+                onboardingStep: 'COMPLETED'
+            }
+        });
+
+        await sock.sendMessage(remoteJid, {
+            text: `✅ *¡Peso actualizado a ${weight} kg!*\n\n` +
+                `Tus nuevas metas diarias reajustadas son:\n` +
+                `🔥 *Calorías:* ${macros.targetCalories} kcal\n` +
+                `🥩 *Proteínas:* ${macros.proteinG}g | 🍞 *Carbs:* ${macros.carbsG}g | 🥑 *Grasas:* ${macros.fatsG}g`
+        });
+        return;
+    }
+
+    // ESTADO: EDITAR OBJETIVO
+    if (user.onboardingStep === 'EDIT_GOAL') {
+        let goal = 'maintain';
+        if (text === '1') goal = 'lose';
+        if (text === '3') goal = 'gain';
+
+        const macros = calculateMacros(user.age, user.weightKg, user.heightCm, goal);
+
+        await prisma.user.update({
+            where: { id: user.id },
+            data: {
+                goal,
+                dailyCalories: macros.targetCalories,
+                dailyProteinG: macros.proteinG,
+                dailyCarbsG: macros.carbsG,
+                dailyFatsG: macros.fatsG,
+                onboardingStep: 'COMPLETED'
+            }
+        });
+
+        await sock.sendMessage(remoteJid, {
+            text: `🎯 *¡Objetivo actualizado con éxito!*\n\n` +
+                `Tus nuevas metas diarias son:\n` +
+                `🔥 *Calorías:* ${macros.targetCalories} kcal\n` +
+                `🥩 *Proteínas:* ${macros.proteinG}g | 🍞 *Carbs:* ${macros.carbsG}g | 🥑 *Grasas:* ${macros.fatsG}g`
+        });
+        return;
     }
 }
 
