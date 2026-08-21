@@ -19,7 +19,7 @@ export async function transcribeAudio(audioBuffer: Buffer): Promise<string> {
   return response.text;
 }
 
-// 2. Análisis Estructurado (Extracción de Datos a JSON)
+// 2. Análisis Estructurado de Texto (Extracción de Datos a JSON)
 export async function analyzeMealText(transcription: string) {
   const systemPrompt = `Eres el motor nutricional de NutriVoice. Analiza el texto y devuelve ÚNICAMENTE un JSON válido con las calorías y macronutrientes estimados.
 Si el texto no se refiere a alimentos o comida, establece "is_food": false.
@@ -88,4 +88,44 @@ Saldo restante del día tras este registro:
   });
 
   return completion.choices[0].message.content;
+}
+
+// 4. Análisis de Imágenes (Visión por Computadora)
+export async function analyzeMealImage(imageBase64: string, mimeType: string = 'image/jpeg') {
+  const systemPrompt = `Eres el motor de visión nutricional de NutriVoice. Analiza la imagen del plato de comida y devuelve ÚNICAMENTE un JSON válido con las calorías y macronutrientes estimados.
+Si la imagen no contiene comida o alimentos claros, establece "is_food": false.
+
+Esquema JSON esperado:
+{
+  "is_food": boolean,
+  "meal_type": "desayuno" | "almuerzo" | "cena" | "snack",
+  "items": [{"name": string, "portion_description": string, "calories": number, "protein_g": number, "carbs_g": number, "fats_g": number}],
+  "total_calories": number,
+  "total_protein_g": number,
+  "total_carbs_g": number,
+  "total_fats_g": number
+}`;
+
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: systemPrompt },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Analiza esta imagen de comida e identifica los ingredientes y sus macros desglosados:' },
+          {
+            type: 'image_url',
+            image_url: {
+              url: `data:${mimeType};base64,${imageBase64}`
+            }
+          }
+        ]
+      }
+    ],
+    temperature: 0.2
+  });
+
+  return JSON.parse(completion.choices[0].message.content || '{}');
 }
