@@ -1,3 +1,11 @@
+async function main() {
+    try {
+        console.log('🔄 Sincronizando esquema de base de datos...');
+        await prisma.$executeRawUnsafe(`SELECT 1`); // Verifica conexión
+    } catch (e) {
+        console.log('Esperando conexión con DB...');
+    }
+}
 import crypto from 'crypto';
 if (!globalThis.crypto) {
     (globalThis as any).crypto = crypto;
