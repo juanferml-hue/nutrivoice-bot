@@ -20,20 +20,25 @@ model User {
   dailyCarbsG     Int?
   dailyFatsG      Int?
   onboardingStep  String   @default("COMPLETED") // 'ASK_AGE', 'ASK_WEIGHT', 'ASK_HEIGHT', 'ASK_GOAL', 'COMPLETED'
+  
+  // CAMPOS DE RECORDATORIOS
+  remindersActive Boolean  @default(false)
+  reminderTime    String?  // Formato HH:MM (Ej: "20:30")
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   meals           Meal[]
 }
 
 model Meal {
-  id            String   @id @default(uuid())
-  userId        String
-  user          User     @relation(fields: [userId], references: [id])
-  mealType      String
-  description   String
-  calories      Int
-  proteinG      Float
-  carbsG        Float
-  fatsG         Float
-  createdAt     DateTime @default(now())
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  mealType    String
+  description String
+  calories    Int
+  proteinG    Float
+  carbsG      Float
+  fatsG       Float
+  createdAt   DateTime @default(now())
 }
