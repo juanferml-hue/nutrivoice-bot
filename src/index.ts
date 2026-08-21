@@ -20,25 +20,26 @@ const client = new Client({
 });
 
 client.on('qr', (qr: string) => {
-    console.log('--- COPIA Y ABRE ESTE LINK EN TU NAVEGADOR ---');
+    console.log('--- ESCANEA ESTE NUEVO CÓDIGO QR ---');
     console.log('https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(qr));
     qrcode.generate(qr, { small: true });
 });
 
 client.on('ready', () => {
-    console.log('✅ ¡NutriVoice Bot conectado y escuchando mensajes!');
+    console.log('✅ ¡NutriVoice Bot conectado y escuchando mensajes correctamente!');
 });
 
-client.on('message_create', async (msg: any) => {
+// Función centralizadora para procesar mensajes
+const handleMessage = async (msg: any) => {
     if (msg.fromMe) return;
 
-    console.log(`📩 Mensaje recibido desde ${msg.from}: ${msg.body}`);
+    console.log(`📩 Mensaje recibido de ${msg.from}: ${msg.body}`);
 
     try {
         const result = await analyzeMealText(msg.body);
 
         if (!result.is_food) {
-            await msg.reply('Hola 👋, soy NutriVoice. Envíame lo que comiste para calcular tus calorías y macronutrientes.');
+            await msg.reply('Hola 👋, soy NutriVoice. Envíame lo que comiste para calcular tus calorías.');
             return;
         }
 
@@ -52,10 +53,12 @@ client.on('message_create', async (msg: any) => {
         console.log('✅ Respuesta enviada con éxito.');
 
     } catch (error: any) {
-        console.error('❌ Error procesando el mensaje:', error?.message || error);
-        await msg.reply('Ocurrió un error al analizar la información.');
+        console.error('❌ Error en el procesamiento:', error?.message || error);
+        await msg.reply('Ocurrió un error al procesar el mensaje.');
     }
-});
+};
+
+client.on('message', handleMessage);
 
 client.initialize().catch((error: any) => {
     console.error('❌ ERROR EN INITIALIZE:', error);
