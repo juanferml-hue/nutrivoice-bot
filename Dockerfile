@@ -1,7 +1,6 @@
 FROM node:20-slim
 
-# Instalar git necesario para subdependencias
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y git openssl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -10,6 +9,9 @@ RUN npm install
 
 COPY . .
 
+# Generar cliente de Prisma y compilar TypeScript
+RUN npx prisma generate
 RUN npm run build
 
-CMD ["npm", "start"]
+# Aplicar migraciones a la DB antes de iniciar
+CMD ["sh", "-c", "npx prisma db push && npm start"]
