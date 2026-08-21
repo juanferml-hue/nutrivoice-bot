@@ -1,9 +1,30 @@
 import { Client, LocalAuth } from 'whatsapp-web.js';
 import qrcode from 'qrcode-terminal';
+import fs from 'fs';
+import path from 'path';
 import { analyzeMealText } from './services/aiService';
 
+const WWEBJS_AUTH_PATH = '/app/.wwebjs_auth';
+
+// Remove any stale SingletonLock file left behind by a previous Chrome
+// process. If the container restarts while Chrome still holds this lock,
+// Chrome refuses to start with "profile appears to be in use" errors.
+function removeStaleSingletonLock(): void {
+    try {
+        const singletonLockPath = path.join(WWEBJS_AUTH_PATH, '.SingletonLock');
+        if (fs.existsSync(singletonLockPath)) {
+            fs.unlinkSync(singletonLockPath);
+            console.log('🔓 Se eliminó el archivo .SingletonLock previo.');
+        }
+    } catch (error: any) {
+        console.error('⚠️ No se pudo eliminar .SingletonLock:', error?.message || error);
+    }
+}
+
+removeStaleSingletonLock();
+
 const client = new Client({
-    authStrategy: new LocalAuth({ dataPath: '/app/.wwebjs_auth' }),
+    authStrategy: new LocalAuth({ dataPath: WWEBJS_AUTH_PATH }),
     puppeteer: {
         executablePath: '/usr/bin/google-chrome-stable',
         headless: true,
@@ -15,6 +36,10 @@ const client = new Client({
             '--no-first-run',
             '--no-zygote',
             '--disable-gpu',
+            '--disable-extensions',
+            '--disable-plugins',
+            '--disable-default-apps',
+            '--disable-preconnect',
             '--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
         ]
     }
