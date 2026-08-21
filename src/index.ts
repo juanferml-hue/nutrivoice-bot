@@ -3,18 +3,22 @@ import qrcode from 'qrcode-terminal';
 import http from 'http';
 import { analyzeMealText } from './services/aiService';
 
-// 1. Servidor de Healthcheck para Railway
+// 1. Servidor de Healthcheck para mantener activo el proceso en Railway
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('NutriVoice Bot está activo 🚀\n');
 }).listen(PORT, () => {
-    console.log(`🌐 Servidor de Healthcheck escuchando en puerto ${PORT}`);
+    console.log(`🌐 Servidor de Healthcheck en puerto ${PORT}`);
 });
 
-// 2. Cliente de WhatsApp con banderas de baja memoria y bypass de Puppeteer
+// 2. Cliente de WhatsApp sin --single-process y con banderas estables
 const client = new Client({
-    authStrategy: new LocalAuth({ clientId: 'nutrivoice-v4' }),
+    authStrategy: new LocalAuth({ clientId: 'nutrivoice-v5' }),
+    webVersionCache: {
+        type: 'remote',
+        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+    },
     puppeteer: {
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
         headless: true,
@@ -25,20 +29,19 @@ const client = new Client({
             '--disable-accelerated-2d-canvas',
             '--no-first-run',
             '--no-zygote',
-            '--single-process', // Fuerza a Chromium a correr en un solo proceso
             '--disable-gpu'
         ]
     }
 });
 
 client.on('qr', (qr: string) => {
-    console.log('--- ESCANEA ESTE CÓDIGO QR ---');
+    console.log('--- NUEVO CÓDIGO QR GENERADO ---');
     console.log('https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(qr));
     qrcode.generate(qr, { small: true });
 });
 
 client.on('authenticated', () => {
-    console.log('🔑 Autenticación exitosa en WhatsApp Web. Esperando inicialización del cliente...');
+    console.log('🔑 Autenticación exitosa en WhatsApp Web. Sincronizando chats...');
 });
 
 client.on('ready', () => {
@@ -49,7 +52,7 @@ client.on('auth_failure', (msg) => {
     console.error('❌ Error de autenticación:', msg);
 });
 
-// Escuchador de mensajes
+// Manejo de mensajes
 const handleMessage = async (msg: any) => {
     console.log(`📩 Mensaje detectado | De: ${msg.from} | Texto: ${msg.body}`);
 
@@ -70,7 +73,7 @@ const handleMessage = async (msg: any) => {
             `🥑 *Grasas:* ${result.total_fats_g || 0}g`;
 
         await msg.reply(responseText);
-        console.log('✅ Respuesta enviada exitosamente.');
+        console.log('✅ Respuesta enviada con éxito.');
 
     } catch (error: any) {
         console.error('❌ Error en el procesamiento:', error?.message || error);
@@ -78,7 +81,6 @@ const handleMessage = async (msg: any) => {
 };
 
 client.on('message', handleMessage);
-client.on('message_create', handleMessage);
 
 client.initialize().catch((error: any) => {
     console.error('❌ Error inicializando el cliente:', error);
