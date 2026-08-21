@@ -6,6 +6,7 @@ if (!globalThis.crypto) {
 import makeWASocket, { useMultiFileAuthState, DisconnectReason, downloadMediaMessage } from '@whiskeysockets/baileys';
 import qrcode from 'qrcode-terminal';
 import http from 'http';
+import cron from 'node-cron';
 import { analyzeMealText, generateUserResponse, analyzeMealImage, transcribeAudio } from './services/aiService';
 import { prisma, getOrCreateUser, calculateMacros } from './services/userService';
 
@@ -18,7 +19,7 @@ http.createServer((req, res) => {
 async function main() {
     try {
         console.log('🔄 Sincronizando esquema de base de datos...');
-        await prisma.$executeRawUnsafe(`SELECT 1`); // Verifica conexión
+        await prisma.$executeRawUnsafe(`SELECT 1`);
     } catch (e) {
         console.log('Esperando conexión con DB...');
     }
@@ -50,6 +51,9 @@ async function connectToWhatsApp() {
             if (shouldReconnect) connectToWhatsApp();
         } else if (connection === 'open') {
             console.log('✅ ¡NutriVoice Bot CONECTADO Y ESCUCHANDO!');
+            
+            // Iniciar el programador de recordatorios
+            setupReminderCron(sock);
         }
     });
 
@@ -60,12 +64,10 @@ async function connectToWhatsApp() {
         const remoteJid = msg.key.remoteJid;
         if (!remoteJid) return;
 
-        // Detección de tipos de mensaje
         const isImage = !!msg.message.imageMessage;
         const isAudio = !!msg.message.audioMessage;
         let text = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').trim();
 
-        // Ignorar si no es ni texto, ni imagen, ni audio
         if (!text && !isImage && !isAudio) return;
 
         try {
@@ -80,10 +82,9 @@ async function connectToWhatsApp() {
             let result: any;
             let mealDescription = text;
 
-            // 1. PROCESAR IMAGEN (VISIÓN)
+            // 1. PROCESAR IMAGEN
             if (isImage) {
                 await sock.sendMessage(remoteJid, { text: '📸 Analizando la imagen de tu plato...' });
-                
                 const buffer = await downloadMediaMessage(msg, 'buffer', {});
                 const base64Image = buffer.toString('base64');
                 const mimeType = msg.message.imageMessage?.mimetype || 'image/jpeg';
@@ -91,10 +92,9 @@ async function connectToWhatsApp() {
                 result = await analyzeMealImage(base64Image, mimeType);
                 mealDescription = msg.message.imageMessage?.caption || 'Foto de comida';
             } 
-            // 2. PROCESAR AUDIO (WHISPER)
+            // 2. PROCESAR AUDIO
             else if (isAudio) {
                 await sock.sendMessage(remoteJid, { text: '🎙️ Escuchando tu nota de voz...' });
-
                 const buffer = await downloadMediaMessage(msg, 'buffer', {});
                 mealDescription = await transcribeAudio(buffer);
                 result = await analyzeMealText(mealDescription);
@@ -103,18 +103,24 @@ async function connectToWhatsApp() {
             else {
                 const lowerText = text.toLowerCase();
 
-                // COMANDOS DE CONSULTA Y AJUSTE DE PERFIL
+                // MENÚ PRINCIPAL Y AJUSTES
                 if (lowerText === 'perfil' || lowerText === 'config' || lowerText === 'ajustes') {
+                    const reminderStatus = user.remindersActive 
+                        ? `⏰ Activo (${user.reminderTime} hrs)` 
+                        : '🔕 Desactivado';
+
                     const profileText = `⚙️ *Ajustes de Tu Perfil NutriVoice*\n\n` +
                         `👤 *Edad:* ${user.age || 'No configurado'} años\n` +
                         `⚖️ *Peso:* ${user.weightKg || 'No configurado'} kg\n` +
                         `📏 *Estatura:* ${user.heightCm || 'No configurado'} cm\n` +
-                        `🎯 *Objetivo:* ${user.goal === 'lose' ? 'Perder peso' : user.goal === 'gain' ? 'Ganar masa' : 'Mantener peso'}\n\n` +
+                        `🎯 *Objetivo:* ${user.goal === 'lose' ? 'Perder peso' : user.goal === 'gain' ? 'Ganar masa' : 'Mantener peso'}\n` +
+                        `🔔 *Recordatorios:* ${reminderStatus}\n\n` +
                         `🔥 *Meta Diaria:* ${user.dailyCalories || 2000} kcal\n\n` +
                         `📌 *¿Deseas actualizar algo? Responde con:*\n` +
-                        `1️⃣ *PESO* -> Actualizar tu peso actual\n` +
-                        `2️⃣ *OBJETIVO* -> Cambiar tu meta nutricional\n` +
-                        `3️⃣ *REINICIAR* -> Volver a hacer todo el onboarding`;
+                        `1️⃣ *PESO* -> Actualizar peso actual\n` +
+                        `2️⃣ *OBJETIVO* -> Cambiar meta nutricional\n` +
+                        `3️⃣ *REINICIAR* -> Volver a hacer el onboarding\n` +
+                        `4️⃣ *RECORDATORIO* -> Configurar tus alertas diarias`;
 
                     await sock.sendMessage(remoteJid, { text: profileText });
                     return;
@@ -140,23 +146,29 @@ async function connectToWhatsApp() {
                     return;
                 }
 
-                // COMANDOS DE RESUMEN
+                if (lowerText === 'recordatorio' || lowerText === '4') {
+                    await prisma.user.update({ where: { id: user.id }, data: { onboardingStep: 'EDIT_REMINDER_TOGGLE' } });
+                    await sock.sendMessage(remoteJid, { 
+                        text: '🔔 *Configuración de Recordatorios Diarios*\n\n1️⃣ Activar recordatorios\n2️⃣ Desactivar recordatorios\n\n_Responde con 1 o 2_' 
+                    });
+                    return;
+                }
+
                 if (lowerText === 'resumen' || lowerText === 'hoy') {
                     await sendDailySummary(sock, remoteJid, user.id);
                     return;
                 }
 
-                // REGISTRO DE COMIDA POR TEXTO
+                // REGISTRO DE COMIDA HABITUAL POR TEXTO
                 result = await analyzeMealText(text);
             }
 
-            // SI NO SE DETECTARON ALIMENTOS
             if (!result.is_food) {
                 await sock.sendMessage(remoteJid, { text: 'Hola 👋, no logré identificar alimentos. Envíame un mensaje de texto, foto o audio describiendo tu comida.' });
                 return;
             }
 
-            // Guardar comida en Base de Datos
+            // Guardar en Base de Datos
             await prisma.meal.create({
                 data: {
                     userId: user.id,
@@ -169,19 +181,15 @@ async function connectToWhatsApp() {
                 }
             });
 
-            // Obtener acumulado de hoy
+            // Resumen de hoy
             const today = new Date();
             today.setHours(0, 0, 0, 0);
 
             const todayMeals = await prisma.meal.aggregate({
-                where: {
-                    userId: user.id,
-                    createdAt: { gte: today }
-                },
+                where: { userId: user.id, createdAt: { gte: today } },
                 _sum: { calories: true, proteinG: true, carbsG: true, fatsG: true }
             });
 
-            // Calcular saldo restante del día
             const consumedCals = todayMeals._sum.calories || 0;
             const consumedProtein = todayMeals._sum.proteinG || 0;
             const consumedCarbs = todayMeals._sum.carbsG || 0;
@@ -194,13 +202,7 @@ async function connectToWhatsApp() {
                 fats: (user.dailyFatsG || 60) - consumedFats
             };
 
-            // Generar respuesta conversacional inteligente
-            const responseText = await generateUserResponse(
-                mealDescription,
-                result,
-                remainingMacros
-            );
-
+            const responseText = await generateUserResponse(mealDescription, result, remainingMacros);
             await sock.sendMessage(remoteJid, { text: responseText });
 
         } catch (error: any) {
@@ -209,12 +211,12 @@ async function connectToWhatsApp() {
     });
 }
 
-// Función auxiliar para el Onboarding y Edición
+// MANEJO DE ONBOARDING Y CONFIGURACIONES
 async function handleOnboarding(sock: any, remoteJid: string, user: any, text: string) {
     if (user.onboardingStep === 'ASK_AGE') {
         const age = parseInt(text);
         if (isNaN(age) || age < 10 || age > 100) {
-            await sock.sendMessage(remoteJid, { text: '👋 ¡Bienvenido a NutriVoice! Para personalizar tu plan, ¿cuántos años tienes?' });
+            await sock.sendMessage(remoteJid, { text: '👋 ¡Bienvenido a NutriVoice! Para comenzar, ¿cuántos años tienes?' });
             return;
         }
         await prisma.user.update({ where: { id: user.id }, data: { age, onboardingStep: 'ASK_WEIGHT' } });
@@ -261,23 +263,48 @@ async function handleOnboarding(sock: any, remoteJid: string, user: any, text: s
                 dailyProteinG: macros.proteinG,
                 dailyCarbsG: macros.carbsG,
                 dailyFatsG: macros.fatsG,
-                onboardingStep: 'COMPLETED'
+                onboardingStep: 'ASK_REMINDER'
             }
         });
 
         await sock.sendMessage(remoteJid, {
-            text: `🎯 *¡Perfil Configurado con Éxito!*\n\n` +
-                `Tu meta diaria estimada es:\n` +
-                `🔥 *Calorías:* ${macros.targetCalories} kcal\n` +
-                `🥩 *Proteínas:* ${macros.proteinG}g\n` +
-                `🍞 *Carbohidratos:* ${macros.carbsG}g\n` +
-                `🥑 *Grasas:* ${macros.fatsG}g\n\n` +
-                `¡Ya puedes empezar a enviarme fotos, audios o textos de lo que comes!`
+            text: `🎯 *¡Perfil Nutricional Guardado!*\n\n` +
+                `Meta: *${macros.targetCalories} kcal* diarias.\n\n` +
+                `🔔 ¿Quieres activar recordatorios para registrar tu comida del día?\n\n1️⃣ Sí, activar\n2️⃣ No, gracias\n\n_Responde con 1 o 2_`
         });
         return;
     }
 
-    // ESTADO: EDITAR PESO
+    if (user.onboardingStep === 'ASK_REMINDER') {
+        if (text === '1') {
+            await prisma.user.update({ where: { id: user.id }, data: { onboardingStep: 'ASK_REMINDER_TIME' } });
+            await sock.sendMessage(remoteJid, { text: '⏰ ¿A qué hora prefieres recibir el recordatorio? Responde en formato de 24 horas (Ej: 20:30 o 21:00).' });
+        } else {
+            await prisma.user.update({ where: { id: user.id }, data: { remindersActive: false, onboardingStep: 'COMPLETED' } });
+            await sock.sendMessage(remoteJid, { text: '👍 ¡Entendido! Puedes activarlos en cualquier momento escribiendo *CONFIG*.\n\n¡Ya puedes empezar a enviarme fotos, audios o textos de lo que comes!' });
+        }
+        return;
+    }
+
+    if (user.onboardingStep === 'ASK_REMINDER_TIME' || user.onboardingStep === 'EDIT_REMINDER_TIME') {
+        const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+        if (!timeRegex.test(text.trim())) {
+            await sock.sendMessage(remoteJid, { text: '⚠️ Por favor ingresa una hora válida en formato 24h (Ej: 20:30 o 09:00).' });
+            return;
+        }
+
+        const formattedTime = text.trim().padStart(5, '0');
+        await prisma.user.update({
+            where: { id: user.id },
+            data: { remindersActive: true, reminderTime: formattedTime, onboardingStep: 'COMPLETED' }
+        });
+
+        await sock.sendMessage(remoteJid, { 
+            text: `✅ *Recordatorio programado diariamente a las ${formattedTime} hrs.*\n\n¡Todo está listo! Envíame fotos, notas de voz o texto de tus alimentos para llevar tu control.` 
+        });
+        return;
+    }
+
     if (user.onboardingStep === 'EDIT_WEIGHT') {
         const weight = parseFloat(text.replace(',', '.'));
         if (isNaN(weight) || weight < 30 || weight > 250) {
@@ -286,7 +313,6 @@ async function handleOnboarding(sock: any, remoteJid: string, user: any, text: s
         }
 
         const macros = calculateMacros(user.age, weight, user.heightCm, user.goal);
-
         await prisma.user.update({
             where: { id: user.id },
             data: {
@@ -299,23 +325,16 @@ async function handleOnboarding(sock: any, remoteJid: string, user: any, text: s
             }
         });
 
-        await sock.sendMessage(remoteJid, {
-            text: `✅ *¡Peso actualizado a ${weight} kg!*\n\n` +
-                `Tus nuevas metas diarias reajustadas son:\n` +
-                `🔥 *Calorías:* ${macros.targetCalories} kcal\n` +
-                `🥩 *Proteínas:* ${macros.proteinG}g | 🍞 *Carbs:* ${macros.carbsG}g | 🥑 *Grasas:* ${macros.fatsG}g`
-        });
+        await sock.sendMessage(remoteJid, { text: `✅ *¡Peso actualizado a ${weight} kg!* Meta: ${macros.targetCalories} kcal` });
         return;
     }
 
-    // ESTADO: EDITAR OBJETIVO
     if (user.onboardingStep === 'EDIT_GOAL') {
         let goal = 'maintain';
         if (text === '1') goal = 'lose';
         if (text === '3') goal = 'gain';
 
         const macros = calculateMacros(user.age, user.weightKg, user.heightCm, goal);
-
         await prisma.user.update({
             where: { id: user.id },
             data: {
@@ -328,17 +347,63 @@ async function handleOnboarding(sock: any, remoteJid: string, user: any, text: s
             }
         });
 
-        await sock.sendMessage(remoteJid, {
-            text: `🎯 *¡Objetivo actualizado con éxito!*\n\n` +
-                `Tus nuevas metas diarias son:\n` +
-                `🔥 *Calorías:* ${macros.targetCalories} kcal\n` +
-                `🥩 *Proteínas:* ${macros.proteinG}g | 🍞 *Carbs:* ${macros.carbsG}g | 🥑 *Grasas:* ${macros.fatsG}g`
-        });
+        await sock.sendMessage(remoteJid, { text: `🎯 *¡Objetivo actualizado!* Nueva meta: ${macros.targetCalories} kcal` });
+        return;
+    }
+
+    if (user.onboardingStep === 'EDIT_REMINDER_TOGGLE') {
+        if (text === '1') {
+            await prisma.user.update({ where: { id: user.id }, data: { onboardingStep: 'EDIT_REMINDER_TIME' } });
+            await sock.sendMessage(remoteJid, { text: '⏰ ¿A qué hora deseas el recordatorio? Usa el formato 24h (Ej: 20:30).' });
+        } else {
+            await prisma.user.update({ where: { id: user.id }, data: { remindersActive: false, onboardingStep: 'COMPLETED' } });
+            await sock.sendMessage(remoteJid, { text: '🔕 Recordatorios desactivados.' });
+        }
         return;
     }
 }
 
-// Función auxiliar para el Resumen Diario
+// PROGRAMADOR AUTOMÁTICO DE RECORDATORIOS (CRON JOB)
+function setupReminderCron(sock: any) {
+    // Revisa cada minuto si hay usuarios a los que les corresponda un recordatorio
+    cron.schedule('* * * * *', async () => {
+        const now = new Date();
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const currentTime = `${hours}:${minutes}`;
+
+        try {
+            const usersToNotify = await prisma.user.findMany({
+                where: {
+                    remindersActive: true,
+                    reminderTime: currentTime,
+                    onboardingStep: 'COMPLETED'
+                }
+            });
+
+            for (const user of usersToNotify) {
+                // Verificar si registró alguna comida hoy
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+
+                const mealsCount = await prisma.meal.count({
+                    where: { userId: user.id, createdAt: { gte: today } }
+                });
+
+                // Si no ha registrado ninguna comida hoy, le envía el mensaje
+                if (mealsCount === 0) {
+                    await sock.sendMessage(user.phoneNumber, {
+                        text: `👋 ¡Hola! Recuerda registrar tus alimentos de hoy en NutriVoice para no perder la secuencia de tus metas. 🥗📸`
+                    });
+                }
+            }
+        } catch (e) {
+            console.error('Error en el cron de recordatorios:', e);
+        }
+    });
+}
+
+// AUXILIAR RESUMEN DIARIO
 async function sendDailySummary(sock: any, remoteJid: string, userId: string) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -362,7 +427,6 @@ async function sendDailySummary(sock: any, remoteJid: string, userId: string) {
     });
 
     summaryText += `\n🔥 *Total Acumulado:* ${totalCals} kcal`;
-
     await sock.sendMessage(remoteJid, { text: summaryText });
 }
 
