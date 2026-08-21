@@ -6,22 +6,27 @@ import { analyzeMealText } from './services/aiService';
 
 const WWEBJS_AUTH_PATH = '/app/.wwebjs_auth';
 
-// Remove any stale SingletonLock file left behind by a previous Chrome
-// process. If the container restarts while Chrome still holds this lock,
-// Chrome refuses to start with "profile appears to be in use" errors.
-function removeStaleSingletonLock(): void {
+// Completely wipe the WhatsApp auth/profile directory on every startup.
+// Previously we only removed the .SingletonLock file, but that was not
+// enough: the rest of the Chrome profile could still be left in a corrupted
+// state (e.g. re-mounted or cached volumes), causing Chrome to refuse to
+// start. Forcefully deleting and recreating the whole directory guarantees
+// a clean profile for every deploy, at the cost of requiring a fresh QR
+// code scan each time.
+function cleanWhatsAppAuthDirectory(): void {
     try {
-        const singletonLockPath = path.join(WWEBJS_AUTH_PATH, '.SingletonLock');
-        if (fs.existsSync(singletonLockPath)) {
-            fs.unlinkSync(singletonLockPath);
-            console.log('🔓 Se eliminó el archivo .SingletonLock previo.');
+        if (fs.existsSync(WWEBJS_AUTH_PATH)) {
+            fs.rmSync(WWEBJS_AUTH_PATH, { recursive: true, force: true });
+            console.log('🧹 Se eliminó por completo el directorio de sesión de WhatsApp.');
         }
+        fs.mkdirSync(WWEBJS_AUTH_PATH, { recursive: true });
+        console.log('📁 Se creó un directorio de sesión de WhatsApp limpio.');
     } catch (error: any) {
-        console.error('⚠️ No se pudo eliminar .SingletonLock:', error?.message || error);
+        console.error('⚠️ No se pudo limpiar el directorio de sesión de WhatsApp:', error?.message || error);
     }
 }
 
-removeStaleSingletonLock();
+cleanWhatsAppAuthDirectory();
 
 const client = new Client({
     authStrategy: new LocalAuth({ dataPath: WWEBJS_AUTH_PATH }),
