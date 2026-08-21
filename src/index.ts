@@ -14,7 +14,7 @@ if (!globalThis.crypto) {
 import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
 import qrcode from 'qrcode-terminal';
 import http from 'http';
-import { analyzeMealText } from './services/aiService';
+import { analyzeMealText, generateUserResponse } from './services/aiService';
 import { prisma, getOrCreateUser, calculateMacros } from './services/userService';
 
 const PORT = process.env.PORT || 3000;
@@ -108,13 +108,25 @@ async function connectToWhatsApp() {
                 _sum: { calories: true, proteinG: true, carbsG: true, fatsG: true }
             });
 
+            // Calcular saldo restante del día
             const consumedCals = todayMeals._sum.calories || 0;
-            const targetCals = user.dailyCalories || 2000;
+            const consumedProtein = todayMeals._sum.proteinG || 0;
+            const consumedCarbs = todayMeals._sum.carbsG || 0;
+            const consumedFats = todayMeals._sum.fatsG || 0;
 
-            const responseText = `🥗 *Análisis Nutricional* (${(result.meal_type || 'comida').toUpperCase()})\n\n` +
-                `🔥 *Calorías:* ${result.total_calories || 0} kcal\n` +
-                `🥩 *Proteínas:* ${result.total_protein_g || 0}g | 🍞 *Carbs:* ${result.total_carbs_g || 0}g | 🥑 *Grasas:* ${result.total_fats_g || 0}g\n\n` +
-                `📊 *Progreso Diario:* ${consumedCals} / ${targetCals} kcal (${Math.round((consumedCals / targetCals) * 100)}%)`;
+            const remainingMacros = {
+                calories: (user.dailyCalories || 2000) - consumedCals,
+                protein: (user.dailyProteinG || 150) - consumedProtein,
+                carbs: (user.dailyCarbsG || 200) - consumedCarbs,
+                fats: (user.dailyFatsG || 60) - consumedFats
+            };
+
+            // Generar respuesta conversacional inteligente con la personalidad deseada
+            const responseText = await generateUserResponse(
+                text,
+                result,
+                remainingMacros
+            );
 
             await sock.sendMessage(remoteJid, { text: responseText });
 
