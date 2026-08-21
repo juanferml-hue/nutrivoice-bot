@@ -3,7 +3,7 @@ import qrcode from 'qrcode-terminal';
 import http from 'http';
 import { analyzeMealText } from './services/aiService';
 
-// 1. Servidor de Healthcheck para mantener activo el proceso en Railway
+// 1. Servidor de Healthcheck para Railway
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -12,13 +12,9 @@ http.createServer((req, res) => {
     console.log(`🌐 Servidor de Healthcheck en puerto ${PORT}`);
 });
 
-// 2. Cliente de WhatsApp sin --single-process y con banderas estables
+// 2. Cliente de WhatsApp
 const client = new Client({
-    authStrategy: new LocalAuth({ clientId: 'nutrivoice-v5' }),
-    webVersionCache: {
-        type: 'remote',
-        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
-    },
+    authStrategy: new LocalAuth({ clientId: 'nutrivoice-v6' }),
     puppeteer: {
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
         headless: true,
@@ -35,26 +31,22 @@ const client = new Client({
 });
 
 client.on('qr', (qr: string) => {
-    console.log('--- NUEVO CÓDIGO QR GENERADO ---');
+    console.log('--- ESCANEA ESTE NUEVO CÓDIGO QR ---');
     console.log('https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(qr));
     qrcode.generate(qr, { small: true });
 });
 
 client.on('authenticated', () => {
-    console.log('🔑 Autenticación exitosa en WhatsApp Web. Sincronizando chats...');
+    console.log('🔑 Autenticación exitosa en WhatsApp Web.');
 });
 
 client.on('ready', () => {
     console.log('✅ ¡NutriVoice Bot CONECTADO y ESCUCHANDO!');
 });
 
-client.on('auth_failure', (msg) => {
-    console.error('❌ Error de autenticación:', msg);
-});
-
-// Manejo de mensajes
+// Escuchador de mensajes
 const handleMessage = async (msg: any) => {
-    console.log(`📩 Mensaje detectado | De: ${msg.from} | Texto: ${msg.body}`);
+    console.log(`📩 Mensaje detectado de ${msg.from}: ${msg.body}`);
 
     if (msg.fromMe) return;
 
