@@ -73,6 +73,20 @@ try {
                 '--disable-plugins',
                 '--disable-default-apps',
                 '--disable-preconnect',
+                // The following flags are additional container/sandbox hardening
+                // measures for environments like Railway, where Chrome can get
+                // stuck during initialization before ever reaching the
+                // login/auth state.
+                '--single-process',
+                '--disable-sync',
+                '--disable-background-networking',
+                '--disable-breakpad',
+                '--disable-component-extensions-with-background-pages',
+                '--disable-hang-monitor',
+                '--metrics-recording-only',
+                '--mute-audio',
+                '--no-default-browser-check',
+                '--no-pings',
                 '--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
             ]
         }
@@ -185,15 +199,31 @@ const heartbeat = setInterval(() => {
     }
 }, HEARTBEAT_INTERVAL_MS);
 
+const INITIALIZE_TIMEOUT_MS = 30 * 1000; // 30 seconds
+
 (async () => {
     try {
         console.log('▶️ Llamando a client.initialize()...');
-        await client.initialize();
+
+        let timeoutHandle: NodeJS.Timeout;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+            timeoutHandle = setTimeout(() => {
+                reject(new Error(`client.initialize() no respondió en ${INITIALIZE_TIMEOUT_MS / 1000}s (timeout).`));
+            }, INITIALIZE_TIMEOUT_MS);
+        });
+
+        await Promise.race([client.initialize(), timeoutPromise]);
+        clearTimeout(timeoutHandle!);
+
         console.log('✅ client.initialize() se resolvió correctamente (esto no implica "ready" todavía).');
     } catch (error: any) {
-        console.error('❌ ERROR EN INITIALIZE (excepción capturada):', error?.message || error);
+        console.error('❌ ERROR EN INITIALIZE (excepción capturada o timeout):', error?.message || error);
         console.error(error?.stack || '');
+        console.error('⏰ Puppeteer/Chrome parece haberse quedado colgado durante la inicialización.');
+        console.error('   Esto es un problema conocido de whatsapp-web.js + Puppeteer en entornos de contenedor como Railway.');
+        console.error('   Saliendo del proceso para permitir que Railway reinicie el servicio.');
         clearInterval(heartbeat);
+        process.exit(1);
     }
 })();
 
