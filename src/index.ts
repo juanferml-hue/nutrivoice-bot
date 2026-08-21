@@ -1,7 +1,18 @@
 import { Client, LocalAuth } from 'whatsapp-web.js';
 import qrcode from 'qrcode-terminal';
+import http from 'http';
 import { analyzeMealText } from './services/aiService';
 
+// 1. SERVIDOR DUMMY PARA EVITAR QUE RAILWAY MATE EL PROCESO (HEALTHCHECK)
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('NutriVoice Bot está activo 🚀\n');
+}).listen(PORT, () => {
+    console.log(`🌐 Servidor de Healthcheck escuchando en el puerto ${PORT}`);
+});
+
+// 2. INICIALIZACIÓN DEL CLIENTE DE WHATSAPP
 const client = new Client({
     authStrategy: new LocalAuth({ dataPath: '/app/.wwebjs_auth' }),
     puppeteer: {
@@ -20,7 +31,7 @@ const client = new Client({
 });
 
 client.on('qr', (qr: string) => {
-    console.log('--- ESCANEA ESTE NUEVO CÓDIGO QR ---');
+    console.log('--- COPIA Y ABRE ESTE LINK EN TU NAVEGADOR ---');
     console.log('https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(qr));
     qrcode.generate(qr, { small: true });
 });
@@ -29,7 +40,7 @@ client.on('ready', () => {
     console.log('✅ ¡NutriVoice Bot conectado y escuchando mensajes correctamente!');
 });
 
-// Función centralizadora para procesar mensajes
+// Manejador centralizado de mensajes
 const handleMessage = async (msg: any) => {
     if (msg.fromMe) return;
 
@@ -59,6 +70,7 @@ const handleMessage = async (msg: any) => {
 };
 
 client.on('message', handleMessage);
+client.on('message_create', handleMessage);
 
 client.initialize().catch((error: any) => {
     console.error('❌ ERROR EN INITIALIZE:', error);
