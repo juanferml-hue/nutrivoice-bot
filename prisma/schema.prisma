@@ -12,21 +12,23 @@ model User {
   phone           String   @unique
   name            String?
   age             Int?
-  weightKg        Float?
-  heightCm        Float?
-  goal            String?  // 'lose', 'maintain', 'gain'
-  dailyCalories   Int?
-  dailyProteinG   Int?
-  dailyCarbsG     Int?
-  dailyFatsG      Int?
-  onboardingStep  String   @default("COMPLETED") // 'ASK_AGE', 'ASK_WEIGHT', 'ASK_HEIGHT', 'ASK_GOAL', 'COMPLETED'
+  weight          Float?
+  height          Float?
+  activityLevel   String?
+  goal            String?
+  targetCalories  Int?
+  targetProtein   Int?
+  targetCarbs     Int?
+  targetFats      Int?
   
-  // CAMPOS DE RECORDATORIOS
-  remindersActive Boolean  @default(false)
-  reminderTime    String?  // Formato HH:MM (Ej: "20:30")
-
+  // --- NUEVOS CAMPOS DE MONETIZACIÓN ---
+  messagesUsed    Int      @default(0)
+  isPro           Boolean  @default(false)
+  subscriptionEnd DateTime?
+  
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  
   meals           Meal[]
 }
 
@@ -34,11 +36,11 @@ model Meal {
   id          String   @id @default(uuid())
   userId      String
   user        User     @relation(fields: [userId], references: [id])
-  mealType    String
+  type        String
   description String
   calories    Int
-  proteinG    Float
-  carbsG      Float
-  fatsG       Float
+  protein     Float
+  carbs       Float
+  fats        Float
   createdAt   DateTime @default(now())
 }
