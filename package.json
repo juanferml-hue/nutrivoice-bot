@@ -5,6 +5,7 @@
   "dependencies": {
     "@prisma/client": "^5.10.0",
     "@whiskeysockets/baileys": "^6.6.0",
+    "mercadopago": "^2.0.8",
     "node-cron": "^3.0.3",
     "openai": "^4.0.0",
     "qrcode-terminal": "^0.12.0"
