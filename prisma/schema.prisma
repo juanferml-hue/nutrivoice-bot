@@ -37,11 +37,11 @@ model Meal {
   id          String   @id @default(uuid())
   userId      String
   user        User     @relation(fields: [userId], references: [id])
-  type        String
+  type        String   @default("snack")
   description String
-  calories    Int
-  protein     Float
-  carbs       Float
-  fats        Float
+  calories    Int      @default(0)
+  protein     Float    @default(0)
+  carbs       Float    @default(0)
+  fats        Float    @default(0)
   createdAt   DateTime @default(now())
 }
