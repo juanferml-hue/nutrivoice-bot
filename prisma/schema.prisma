@@ -41,10 +41,12 @@ model Meal {
   userId      String
   user        User     @relation(fields: [userId], references: [id])
   type        String   @default("snack")
+  mealType    String?
   description String
   calories    Int      @default(0)
   protein     Float    @default(0)
   carbs       Float    @default(0)
   fats        Float    @default(0)
+  fatsG       Float?
   createdAt   DateTime @default(now())
 }
