@@ -13,11 +13,13 @@ model User {
   name            String?
   age             Int?
   weight          Float?
+  weightKg        Float?
   height          Float?
   heightCm        Float?
   activityLevel   String?
   goal            String?
   onboardingStep  String?
+  remindersActive Boolean?  @default(true)
   targetCalories  Int?
   targetProtein   Int?
   targetCarbs     Int?
