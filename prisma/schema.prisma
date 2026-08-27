@@ -8,26 +8,27 @@ generator client {
 }
 
 model User {
-  id              String   @id @default(uuid())
-  phone           String   @unique
+  id              String    @id @default(uuid())
+  phone           String    @unique
   name            String?
   age             Int?
   weight          Float?
   height          Float?
   activityLevel   String?
   goal            String?
+  onboardingStep  String?
   targetCalories  Int?
   targetProtein   Int?
   targetCarbs     Int?
   targetFats      Int?
   
-  // --- NUEVOS CAMPOS DE MONETIZACIÓN ---
-  messagesUsed    Int      @default(0)
-  isPro           Boolean  @default(false)
+  // --- CAMPOS DE MONETIZACIÓN ---
+  messagesUsed    Int       @default(0)
+  isPro           Boolean   @default(false)
   subscriptionEnd DateTime?
   
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
   
   meals           Meal[]
 }
