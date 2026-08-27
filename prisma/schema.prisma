@@ -49,6 +49,7 @@ model Meal {
   description String
   calories    Int      @default(0)
   protein     Float    @default(0)
+  proteinG    Float?
   carbs       Float    @default(0)
   carbsG      Float?
   fats        Float    @default(0)
