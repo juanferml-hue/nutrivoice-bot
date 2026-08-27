@@ -14,6 +14,7 @@ model User {
   age             Int?
   weight          Float?
   height          Float?
+  heightCm        Float?
   activityLevel   String?
   goal            String?
   onboardingStep  String?
@@ -21,6 +22,8 @@ model User {
   targetProtein   Int?
   targetCarbs     Int?
   targetFats      Int?
+  dailyProteinG   Int?
+  dailyFatsG      Int?
   
   // --- CAMPOS DE MONETIZACIÓN ---
   messagesUsed    Int       @default(0)
