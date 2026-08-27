@@ -43,7 +43,7 @@ Esquema JSON:
   return JSON.parse(completion.choices[0].message.content || '{}');
 }
 
-// 3. Generación de Respuesta Conversacional (Fase 2: Tono Empático, Conciso y Motivador)
+// 3. Generación de Respuesta Conversacional
 export async function generateUserResponse(
   userMessage: string,
   mealData: any,
@@ -124,4 +124,94 @@ Esquema JSON esperado:
   });
 
   return JSON.parse(completion.choices[0].message.content || '{}');
+}
+
+// 5. Recomendación de Recetas según Saldo Restante (SPRINT VALOR)
+export async function suggestRecipe(
+  remainingMacros: { calories: number; protein: number; carbs: number; fats: number },
+  userGoal: string
+) {
+  const systemPrompt = `
+Eres un chef nutricionista de NutriVoice. Tu tarea es sugerir 2 opciones de recetas sencillas y rápidas de preparar que se adapten exactamente a los macronutrientes y calorías que le quedan disponibles al usuario hoy.
+Usa ingredientes accesibles en Latinoamérica (Colombia).
+Formato conciso con viñetas, ingredientes básicos y preparación en 2 pasos.
+  `;
+
+  const userPrompt = `
+Objetivo del usuario: ${userGoal}
+Macros restantes para hoy:
+- Calorías: ${remainingMacros.calories} kcal
+- Proteína: ${remainingMacros.protein} g
+- Carbohidratos: ${remainingMacros.carbs} g
+- Grasas: ${remainingMacros.fats} g
+  `;
+
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ],
+    temperature: 0.7
+  });
+
+  return completion.choices[0].message.content;
+}
+
+// 6. Generación de Lista de Compras Semanal (SPRINT VALOR)
+export async function generateShoppingList(mealsHistory: any[], userGoal: string) {
+  const systemPrompt = `
+Eres un planificador de compras saludables para NutriVoice. 
+Analiza los registros de alimentos de la última semana del usuario y genera una lista de compras recomendada agrupada por categorías (Proteínas, Verduras/Vegetales, Carbohidratos/Granos, Lácteos/Grasas saludables y Frutas).
+Haz la lista práctica, orientada a mantener su objetivo (${userGoal}). Usar tono motivador y limpio.
+  `;
+
+  const userPrompt = `Historial de alimentos registrados en la semana: ${JSON.stringify(mealsHistory)}`;
+
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ],
+    temperature: 0.5
+  });
+
+  return completion.choices[0].message.content;
+}
+
+// 7. Análisis de Avance Semanal (SPRINT VALOR)
+export async function generateWeeklyProgress(
+  userName: string,
+  userGoal: string,
+  targetCalories: number,
+  mealsHistory: any[]
+) {
+  const systemPrompt = `
+Eres un coach nutricional experto de NutriVoice. 
+Crea un informe de avance semanal empático, motivador y directo basándote en los datos de la semana.
+Estructura:
+1. Resumen de consistencia (cuántos días registró alimentos).
+2. Promedio diario de calorías consumidas vs su meta (${targetCalories} kcal).
+3. Aspectos a destacar (puntos fuertes).
+4. Un consejo clave de ajuste para la próxima semana alineado a su objetivo (${userGoal}).
+  `;
+
+  const userPrompt = `
+Usuario: ${userName}
+Meta: ${userGoal}
+Meta calórica diaria: ${targetCalories} kcal
+Historial de alimentos de la semana: ${JSON.stringify(mealsHistory)}
+  `;
+
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ],
+    temperature: 0.6
+  });
+
+  return completion.choices[0].message.content;
 }
