@@ -24,7 +24,9 @@ model User {
   targetProtein   Int?
   targetCarbs     Int?
   targetFats      Int?
+  dailyCalories   Int?
   dailyProteinG   Int?
+  dailyCarbsG     Int?
   dailyFatsG      Int?
   
   // --- CAMPOS DE MONETIZACIÓN ---
@@ -48,6 +50,7 @@ model Meal {
   calories    Int      @default(0)
   protein     Float    @default(0)
   carbs       Float    @default(0)
+  carbsG      Float?
   fats        Float    @default(0)
   fatsG       Float?
   createdAt   DateTime @default(now())
