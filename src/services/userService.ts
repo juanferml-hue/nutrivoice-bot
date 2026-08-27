@@ -1,35 +1,35 @@
 import { PrismaClient } from '@prisma/client';
 
-export const prisma = new PrismaClient();
+const prisma = new PrismaClient();
 
-// Calcular metas diarias basadas en Mifflin-St Jeor
-export function calculateMacros(age: number, weightKg: number, heightCm: number, goal: string) {
-    // Tasa Metabólica Basal (estimación promedio)
-    let bmr = (10 * weightKg) + (6.25 * heightCm) - (5 * age) + 5; 
-    let targetCalories = Math.round(bmr * 1.375); // Factor de actividad moderada baja
+export async function getOrCreateUser(phone: string, isPro: boolean = false) {
+  let user = await prisma.user.findUnique({
+    where: { phone }
+  });
 
-    if (goal === 'lose') targetCalories -= 400;
-    if (goal === 'gain') targetCalories += 300;
+  if (!user) {
+    user = await prisma.user.create({
+      data: {
+        phone,
+        isPro,
+        onboardingStep: 'name'
+      }
+    });
+  }
 
-    const proteinG = Math.round((targetCalories * 0.30) / 4);
-    const carbsG = Math.round((targetCalories * 0.40) / 4);
-    const fatsG = Math.round((targetCalories * 0.30) / 9);
-
-    return { targetCalories, proteinG, carbsG, fatsG };
+  return user;
 }
 
-export async function getOrCreateUser(phone: String) {
-    const userPhone = phone.toString();
-    let user = await prisma.user.findUnique({ where: { phone: userPhone } });
+export async function updateUser(phone: string, data: Record<string, any>) {
+  return await prisma.user.update({
+    where: { phone },
+    data
+  });
+}
 
-    if (!user) {
-        user = await prisma.user.create({
-            data: {
-                phone: userPhone,
-                onboardingStep: 'ASK_AGE'
-            }
-        });
-    }
-
-    return user;
+export async function updateUserOnboardingStep(phone: string, step: string) {
+  return await prisma.user.update({
+    where: { phone },
+    data: { onboardingStep: step }
+  });
 }
